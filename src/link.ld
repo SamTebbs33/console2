@@ -1,31 +1,25 @@
-ENTRY(_main)
+ENTRY(_start)
 
 MEMORY {
-    ppuCode (xr) : org = 0x0, len = 8 * 1024
-    ppuData (rw) : org = 8 * 1024, len = (64 * 1024) - (8 * 1024)
+    ppu(rx) : org = 0, len = (8 * 1024)
 }
+
+/*
+ * Mem map
+ * 0 - 8KiB: Code
+ * 8KiB - 16KiB: Sprite table (2880B), tile table (2880B) and ppu registers
+ * 16KiB - 32KiB: Sprite defs, animation defs and palette defs
+ * 32KiB - 64KiB: Pixel map (30000B) and working mem (2KiB)
+ */
+_stack_end = 64 * 1024 - 1;
 
 SECTIONS
 {
     .text :
     {
         *(.start)
+        . = 0x0066;
+        *(.nmiHandler)
         *(.text)
-    } > ppuCode
-
-    .data :
-    {
-        _spriteEntries = .;
-        . = . + 2 * 1024;
-        _tileEntries = .;
-        . = . + 2 * 1024;
-        . = . + 4 * 1024;
-        _spriteDefs = .;
-        . = . + 8 * 1024;
-        _animations = .;
-        . = . + 8 * 1024;
-        stack_start = .;
-        . = . + 2 * 1024;
-        stack_end = .;
-    } > ppuData
+    } > ppu
 }
