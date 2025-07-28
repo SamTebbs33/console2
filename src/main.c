@@ -24,6 +24,11 @@ byte ppuDefROM[16 * 1024];
 unsigned debugStack[32 * 1024];
 unsigned debugSP = 32 * 1024 - 1;
 
+void ppuMemWrite(size_t param, ushort address, byte data);
+byte ppuMemRead(size_t param, ushort address);
+
+Z80Context PPU = {.memRead = ppuMemRead, .memWrite = ppuMemWrite, .memParam = 0, .ioParam = 0};
+
 byte* ppuMemMap(ushort address, ushort* relAddress) {
     if (address < PPU_CODE_END) {
         *relAddress = address;
@@ -46,30 +51,50 @@ byte ppuMemRead(size_t param, ushort address) {
 }
 
 void ppuMemWrite(size_t param, ushort address, byte data) {
+    ushort originalAddress = address;
     byte* mem = ppuMemMap(address, &address);
-    if (mem == ppuCodeROM) printf("error: Writing to ppu ROM address %x\n", address);
-    else if (mem == ppuDefROM) printf("error: Writing to ppu def ROM address %x\n", address);
-    else if (mem == tableRAM) printf("error: Writing to table RAM address %x\n", address);
+    if (mem == ppuCodeROM) printf("error: Writing to ppu ROM address %x after PC %x\n", address, PPU.PC);
+    else if (mem == ppuDefROM) printf("error: Writing to ppu def ROM address %x after PC %x\n", address, PPU.PC);
+    else if (mem == tableRAM && originalAddress < PPU_REGS_ADDR) printf("error: Writing to table RAM address %x after PC %x\n", address, PPU.PC);
     mem[address] = data;
 }
 
-Z80Context PPU = {.memRead = ppuMemRead, .memWrite = ppuMemWrite, .memParam = 0, .ioParam = 0};
+typedef enum { HBLANK, VBLANK, DISPLAY } VideoSection;
+char* toString(VideoSection section) {
+    switch (section) {
+        case HBLANK:
+            return "HBLANK";
+        case VBLANK:
+            return "VBLANK";
+        case DISPLAY:
+            return "DISPLAY";
+    }
+}
 
 typedef struct {
-    enum { HBLANK, VBLANK, DISPLAY } section;
+    VideoSection section;
     unsigned vCounter;
     unsigned hCounter;
     unsigned pixelOffset;
 } VideoState;
 
+void setVideoState(VideoState* state, VideoSection section, unsigned h, unsigned v, unsigned pixel) {
+    state->section = section;
+    state->vCounter = v;
+    state->hCounter = h;
+    state->pixelOffset = pixel;
+}
+
 void vStateCycle(VideoState* vstate, SDL_Renderer* renderer) {
+    unsigned hCounter = vstate->hCounter;
+    unsigned vCounter = vstate->vCounter;
+    unsigned pixelOffset = vstate->pixelOffset;
     switch (vstate->section) {
         case DISPLAY:
-            vstate->pixelOffset++;
-            if (vstate->hCounter == 800) {
-                vstate->section = HBLANK;
+            if (hCounter == 800) {
+                setVideoState(vstate, HBLANK, hCounter + 1, vCounter, 0);
             } else {
-                uint8_t pixel = ppuMemRead(1, PIXEL_MAP_ADDR + (vstate->pixelOffset / 4));
+                uint8_t pixel = ppuMemRead(1, PIXEL_MAP_ADDR + (pixelOffset / 4));
                 uint8_t r = (pixel & 0b11);
                 r |= (r << 2) | (r << 4) | (r << 6);
                 uint8_t g = (pixel & 0b1100) >> 2;
@@ -77,36 +102,31 @@ void vStateCycle(VideoState* vstate, SDL_Renderer* renderer) {
                 uint8_t b = (pixel & 0b110000) >> 4;
                 b |= (b << 2) | (b << 4) | (b << 6);
                 SDL_SetRenderDrawColor(renderer, r, g, b, 255);
-                SDL_RenderDrawPoint(renderer, vstate->hCounter, vstate->vCounter);
+                SDL_RenderDrawPoint(renderer, hCounter, vCounter);
+                setVideoState(vstate, DISPLAY, hCounter + 1, vCounter, pixelOffset + 1);
             }
-            vstate->hCounter++;
             break;
         case HBLANK:
-            if (vstate->hCounter == 1056) {
-                vstate->vCounter++;
-                vstate->hCounter = 0;
-                if (vstate->vCounter == 600) {
-                    vstate->pixelOffset = 0;
-                    vstate->section = VBLANK;
+            if (hCounter == 1056) {
+                if (vCounter == 599) {
+                    setVideoState(vstate, VBLANK, 0, vCounter + 1, 0);
                 } else {
-                    vstate->section = DISPLAY;
+                    setVideoState(vstate, DISPLAY, 0, vCounter + 1, 0);
                 }
             } else {
-                vstate->hCounter++;
+                setVideoState(vstate, HBLANK, hCounter + 1, vCounter, 0);
             }
             break;
         case VBLANK:
             if (vstate->hCounter == 1056) {
                 vstate->hCounter = 0;
                 if (vstate->vCounter == 628) {
-                    vstate->section = DISPLAY;
-                    vstate->hCounter = 0;
-                    vstate->vCounter = 0;
+                    setVideoState(vstate, DISPLAY, 0, 0, 0);
                 } else {
-                    vstate->vCounter++;
+                    setVideoState(vstate, VBLANK, 0, vCounter + 1, 0);
                 }
             } else {
-                vstate->hCounter++;
+                setVideoState(vstate, VBLANK, hCounter + 1, vCounter, 0);
             }
             break;
     }
@@ -123,9 +143,7 @@ void execute(Z80Context* ctx) {
                 // POP IX
                 // POP IY
                 debugSP += 2;
-                printf("found pop ix/iy\n");
             } else if (opc2 == 0xE5) {
-                printf("found push ix/iy\n");
                 // PUSH IX
                 // PUSH IY
                 debugStack[--debugSP] = PC;
@@ -136,7 +154,6 @@ void execute(Z80Context* ctx) {
         case 0b11010001:
         case 0b11100001:
         case 0b11110001:
-            printf("found pop qq\n");
             // POP qq
             debugSP += 2;
             break;
@@ -144,7 +161,6 @@ void execute(Z80Context* ctx) {
         case 0b11010101:
         case 0b11100101:
         case 0b11110101:
-            printf("found push qq\n");
             debugStack[--debugSP] = PC;
             debugStack[--debugSP] = PC;
             break;
@@ -176,11 +192,17 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    unsigned pixelScaleFactor = 1;
-    struct SDL_Window* window = SDL_CreateWindow("Console", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, SPRITE_ENTRIES_PIXELS_X, SPRITE_ENTRIES_PIXELS_Y, SDL_WINDOW_RESIZABLE);
-    struct SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, 0); 
-    SDL_RenderSetScale(renderer, pixelScaleFactor, pixelScaleFactor);
-    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
+    int windowWidth = SPRITE_ENTRIES_PIXELS_X * 4;
+    int windowHeight = SPRITE_ENTRIES_PIXELS_Y * 4;
+    printf("pixels_x: %d, pixels_y: %d\n", windowWidth, windowHeight);
+
+    SDL_Init(SDL_INIT_VIDEO);
+    struct SDL_Window* window = SDL_CreateWindow("Console", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, windowWidth, windowHeight, SDL_WINDOW_BORDERLESS);
+    int width = 0, height = 0;
+    SDL_GetWindowSizeInPixels(window, &width, &height);
+    printf("%d x %d window created\n", width, height);
+    struct SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     SDL_RenderClear(renderer);
     SDL_RenderPresent(renderer);
 
@@ -192,8 +214,9 @@ int main(int argc, char** argv) {
 
     // Give PPU a few cycles to set up stack
     Z80ExecuteTStates(&PPU, 20);
+    ppuMemWrite(0, PPU_REGS_ADDR + REG_PALETTE_BASE + 0, 0xFF);
 
-    VideoState vState = { .section = DISPLAY, .hCounter = 0, .vCounter = 0};
+    VideoState vState = { .section = DISPLAY, .hCounter = 0, .vCounter = 0, .pixelOffset = 0};
 
     unsigned renderCycles = 0;
     bool debug = argc > 2 && strcmp(argv[2], "y") == 0;
@@ -264,7 +287,7 @@ int main(int argc, char** argv) {
         if (vState.section == VBLANK && !IsVBlank) {
             SDL_RenderPresent(renderer);
             Z80NMI(&PPU);
-            printf("VBLANK triggered\n");
+            if (debug) printf("VBLANK triggered\n");
             if (waitForVBlank) {
                 waitForVBlank = false;
                 waitForInput = true;
@@ -277,7 +300,7 @@ int main(int argc, char** argv) {
 
         if (PPU.R1.wr.SP < STACK_BOTTOM) {
             printf("Stack overflowed to address %x at PC %x\n", PPU.R1.wr.SP, PPU.PC);
-            //return 1;
+            return 1;
         }
     }
 
