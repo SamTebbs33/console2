@@ -52,6 +52,7 @@ byte ppuMemRead(size_t param, ushort address) {
 
 void ppuMemWrite(size_t param, ushort address, byte data) {
     ushort originalAddress = address;
+    if (originalAddress == 0x2b32) printf("Writing %x to render state by PC %x\n", data, PPU.PC);
     byte* mem = ppuMemMap(address, &address);
     if (mem == ppuCodeROM) printf("error: Writing to ppu ROM address %x after PC %x\n", address, PPU.PC);
     else if (mem == ppuDefROM) printf("error: Writing to ppu def ROM address %x after PC %x\n", address, PPU.PC);
@@ -59,9 +60,11 @@ void ppuMemWrite(size_t param, ushort address, byte data) {
     mem[address] = data;
 }
 
-typedef enum { HBLANK, VBLANK, DISPLAY } VideoSection;
+typedef enum { HBLANK, VBLANK, DISPLAY, NONE } VideoSection;
 char* toString(VideoSection section) {
     switch (section) {
+        case NONE:
+            return "NONE";
         case HBLANK:
             return "HBLANK";
         case VBLANK:
@@ -69,6 +72,18 @@ char* toString(VideoSection section) {
         case DISPLAY:
             return "DISPLAY";
     }
+}
+
+void drawPixel(SDL_Renderer* renderer, unsigned x, unsigned y, unsigned pixelOffset) {
+    uint8_t pixel = ppuMemRead(1, PIXEL_MAP_ADDR + (pixelOffset / 4));
+    uint8_t r = (pixel & 0b11);
+    r |= (r << 2) | (r << 4) | (r << 6);
+    uint8_t g = (pixel & 0b1100) >> 2;
+    g |= (g << 2) | (g << 4) | (g << 6);
+    uint8_t b = (pixel & 0b110000) >> 4;
+    b |= (b << 2) | (b << 4) | (b << 6);
+    SDL_SetRenderDrawColor(renderer, r, g, b, 255);
+    SDL_RenderDrawPoint(renderer, x, y);
 }
 
 typedef struct {
@@ -90,31 +105,26 @@ void vStateCycle(VideoState* vstate, SDL_Renderer* renderer) {
     unsigned vCounter = vstate->vCounter;
     unsigned pixelOffset = vstate->pixelOffset;
     switch (vstate->section) {
+        case NONE:
+            perror("Unexpected NONE display state\n");
+            break;
         case DISPLAY:
             if (hCounter == 800) {
-                setVideoState(vstate, HBLANK, hCounter + 1, vCounter, 0);
+                setVideoState(vstate, HBLANK, hCounter + 1, vCounter, pixelOffset);
             } else {
-                uint8_t pixel = ppuMemRead(1, PIXEL_MAP_ADDR + (pixelOffset / 4));
-                uint8_t r = (pixel & 0b11);
-                r |= (r << 2) | (r << 4) | (r << 6);
-                uint8_t g = (pixel & 0b1100) >> 2;
-                g |= (g << 2) | (g << 4) | (g << 6);
-                uint8_t b = (pixel & 0b110000) >> 4;
-                b |= (b << 2) | (b << 4) | (b << 6);
-                SDL_SetRenderDrawColor(renderer, r, g, b, 255);
-                SDL_RenderDrawPoint(renderer, hCounter, vCounter);
+                drawPixel(renderer, hCounter, vCounter, pixelOffset);
                 setVideoState(vstate, DISPLAY, hCounter + 1, vCounter, pixelOffset + 1);
             }
             break;
         case HBLANK:
             if (hCounter == 1056) {
                 if (vCounter == 599) {
-                    setVideoState(vstate, VBLANK, 0, vCounter + 1, 0);
+                    setVideoState(vstate, VBLANK, 0, vCounter + 1, pixelOffset);
                 } else {
-                    setVideoState(vstate, DISPLAY, 0, vCounter + 1, 0);
+                    setVideoState(vstate, DISPLAY, 0, vCounter + 1, pixelOffset);
                 }
             } else {
-                setVideoState(vstate, HBLANK, hCounter + 1, vCounter, 0);
+                setVideoState(vstate, HBLANK, hCounter + 1, vCounter, pixelOffset);
             }
             break;
         case VBLANK:
@@ -123,10 +133,10 @@ void vStateCycle(VideoState* vstate, SDL_Renderer* renderer) {
                 if (vstate->vCounter == 628) {
                     setVideoState(vstate, DISPLAY, 0, 0, 0);
                 } else {
-                    setVideoState(vstate, VBLANK, 0, vCounter + 1, 0);
+                    setVideoState(vstate, VBLANK, 0, vCounter + 1, pixelOffset);
                 }
             } else {
-                setVideoState(vstate, VBLANK, hCounter + 1, vCounter, 0);
+                setVideoState(vstate, VBLANK, hCounter + 1, vCounter, pixelOffset);
             }
             break;
     }
@@ -213,15 +223,46 @@ int main(int argc, char** argv) {
     Z80RESET(&PPU);
 
     // Give PPU a few cycles to set up stack
-    Z80ExecuteTStates(&PPU, 20);
+    Z80ExecuteTStates(&PPU, 60);
+    // Set up demo
     ppuMemWrite(0, PPU_REGS_ADDR + REG_PALETTE_BASE + 0, 0xFF);
+    ppuMemWrite(0, PPU_REGS_ADDR + REG_PALETTE_BASE + 1, 0xDD);
+    ppuMemWrite(0, PPU_REGS_ADDR + REG_PALETTE_BASE + 2, 0xBB);
+    ppuMemWrite(0, PPU_REGS_ADDR + REG_PALETTE_BASE + 3, 0x99);
+    unsigned spriteNo = 0;
+    for (unsigned row = 0; row < 8; row++) {
+        for (unsigned column = 0; column < 4; column++) {
+            ppuDefROM[32 + (32 * spriteNo) + (row * 4) + column] = 0b00010001;
+        }
+    }
+    spriteNo = 1;
+    for (unsigned row = 0; row < 8; row++) {
+        for (unsigned column = 0; column < 4; column++) {
+            ppuDefROM[32 + (32 * spriteNo) + (row * 4) + column] = 0b00100010;
+        }
+    }
+    spriteNo = 2;
+    for (unsigned row = 0; row < 8; row++) {
+        for (unsigned column = 0; column < 4; column++) {
+            ppuDefROM[32 + (32 * spriteNo) + (row * 4) + column] = 0b00110011;
+        }
+    }
+    tableRAM[0] = 0;
+    tableRAM[1] = 0;
+    tableRAM[2] = 1;
+    tableRAM[3] = 0;
+    tableRAM[4] = 0;
+    tableRAM[5] = 2;
+    tableRAM[6] = 0;
+    tableRAM[7] = 0;
+    tableRAM[8] = 3;
 
     VideoState vState = { .section = DISPLAY, .hCounter = 0, .vCounter = 0, .pixelOffset = 0};
 
     unsigned renderCycles = 0;
     bool debug = argc > 2 && strcmp(argv[2], "y") == 0;
     bool waitForInput = true;
-    bool waitForVBlank = false;
+    VideoSection waitFor = NONE;
     unsigned instrsToSkipForDebug = 0;
     int instrToSkipTo = -1;
 
@@ -239,7 +280,10 @@ int main(int argc, char** argv) {
                 } if (strcmp(cmd, "v\n") == 0) {
                     printf("Waiting until vblank\n");
                     waitForInput = false;
-                    waitForVBlank = true;
+                    waitFor = VBLANK;
+                } else if (strcmp(cmd, "h\n") == 0) {
+                    waitForInput = false;
+                    waitFor = HBLANK;
                 } else if (strcmp(cmd, "r\n") == 0) {
                     Z80Regs regs = PPU.R1;
                     printf("Regs:\n\tA: %d, F: %d, AF: %d\n\tB: %d, C: %d, BC: %d\n\tD: %d, E: %d, DE: %d\n\tH: %d, L: %d, HL: %d\n\tIX: %d\n\tIY: %d\n\tSP: %d\n", regs.br.A, regs.br.F, regs.wr.AF, regs.br.B, regs.br.C, regs.wr.BC, regs.br.D, regs.br.E, regs.wr.DE, regs.br.H, regs.br.L, regs.wr.HL, regs.wr.IX, regs.wr.IY, regs.wr.SP);
@@ -271,6 +315,25 @@ int main(int argc, char** argv) {
                         instrToSkipTo = i;
                         printf("Skipping to %x\n", instrToSkipTo);
                     }
+                } else if (strcmp(cmd, "d\n") == 0) {
+                    waitForInput = false;
+                    waitFor = DISPLAY;
+                    /*
+                    printf("Rendering to window\n");
+                    unsigned pixelOffset = 0;
+                    for (unsigned y = 0; y < SPRITE_ENTRIES_PIXELS_Y; y++) {
+                        for (unsigned x = 0; x < SPRITE_ENTRIES_PIXELS_X; x++) {
+                            drawPixel(renderer, x, y, pixelOffset++);
+                        }
+                    }
+                    SDL_RenderPresent(renderer);
+                    */
+                } else if (cmd[0] == 'm' && strlen(cmd) > 1) {
+                    int addr = strtol(cmd + 1, NULL, 16);
+                    if (addr > -1) {
+                        byte b = ppuMemRead(0, addr);
+                        printf("Byte at addr %x is %d\n", addr, b);
+                    }
                 } else {
                     printf("Unrecognised command\n");
                 }
@@ -280,23 +343,28 @@ int main(int argc, char** argv) {
             if (instrsToSkipForDebug > 0) instrsToSkipForDebug--;
             if (instrToSkipTo >= 0 && instrToSkipTo == PPU.PC) instrToSkipTo = -1;
         }
-        bool IsVBlank = vState.section == VBLANK;
-        bool IsDisplay = vState.section == DISPLAY;
+        VideoSection prevSection = vState.section;
         vStateCycle(&vState, renderer);
         vStateCycle(&vState, renderer);
-        if (vState.section == VBLANK && !IsVBlank) {
+        if (vState.section == HBLANK && prevSection != HBLANK) {
             SDL_RenderPresent(renderer);
             Z80NMI(&PPU);
-            if (debug) printf("VBLANK triggered\n");
-            if (waitForVBlank) {
-                waitForVBlank = false;
-                waitForInput = true;
-            }
+            if (debug) printf("HBLANK triggered\n");
+        } else if (vState.section == DISPLAY && prevSection != DISPLAY) {
+            printf("PPU was rendering for %d cycles\n", renderCycles);
+            Z80NMI(&PPU);
+            renderCycles = 0;
+        } else if (vState.section == VBLANK && prevSection != VBLANK) {
+            if (debug) printf("VBLANK started\n");
         }
 
-        if (vState.section == VBLANK && !IsVBlank) {
-            renderCycles = 0;
-        } else if (vState.section == VBLANK) renderCycles++;
+        if (waitFor == vState.section && prevSection != vState.section) {
+            waitFor = NONE;
+            waitForInput = true;
+        }
+
+        if (vState.section == HBLANK || vState.section == VBLANK)
+            renderCycles++;
 
         if (PPU.R1.wr.SP < STACK_BOTTOM) {
             printf("Stack overflowed to address %x at PC %x\n", PPU.R1.wr.SP, PPU.PC);
