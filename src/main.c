@@ -86,20 +86,13 @@ char* toString(VideoSection section) {
 
 void drawPixel(SDL_Renderer* renderer, unsigned x, unsigned y, unsigned pixelOffset) {
     uint8_t r, g, b;
-    // Draw a white border to show the displayable area
-    if (x >= 792 || y >= 592) {
-        r = 255;
-        g = 255;
-        b = 255;
-    } else {
-        uint8_t pixel = ppuMemRead(EMU_PARAM, PIXEL_MAP_ADDR + (pixelOffset / 4));
-        r = (pixel & 0b11);
-        r |= (r << 2) | (r << 4) | (r << 6);
-        g = (pixel & 0b1100) >> 2;
-        g |= (g << 2) | (g << 4) | (g << 6);
-        b = (pixel & 0b110000) >> 4;
-        b |= (b << 2) | (b << 4) | (b << 6);
-    }
+    uint8_t pixel = ppuMemRead(EMU_PARAM, PIXEL_MAP_ADDR + ((y / 4) * SPRITE_ENTRIES_PIXELS_X) + (x / 4));
+    r = (pixel & 0b11);
+    r |= (r << 2) | (r << 4) | (r << 6);
+    g = (pixel & 0b1100) >> 2;
+    g |= (g << 2) | (g << 4) | (g << 6);
+    b = (pixel & 0b110000) >> 4;
+    b |= (b << 2) | (b << 4) | (b << 6);
     SDL_SetRenderDrawColor(renderer, r, g, b, 255);
     SDL_RenderDrawPoint(renderer, x, y);
 }
@@ -244,6 +237,7 @@ int main(int argc, char** argv) {
     char* ppuROMPath = argv[1];
     printf("Reading %s\n", ppuROMPath);
     FILE* ppuROMFile = fopen(ppuROMPath, "rb");
+    FILE* vramDumpFile = NULL;
     if (!ppuROMFile) {
         printf("Couldn't open %s\n", ppuROMPath);
         return 1;
@@ -384,6 +378,20 @@ int main(int argc, char** argv) {
                         byte b = ppuMemRead(EMU_PARAM, addr);
                         printf("Byte at addr %x is %d\n", addr, b);
                     }
+                } else if (strcmp(cmd, "dv\n") == 0) {
+                    if (!vramDumpFile) {
+                        vramDumpFile = fopen("vram.log", "w");
+                    }
+                    if (vramDumpFile) {
+                        for (unsigned y = 0; y < SPRITE_ENTRIES_PIXELS_Y; y++) {
+                            for (unsigned x = 0; x < SPRITE_ENTRIES_PIXELS_X; x++) {
+                                fprintf(vramDumpFile, "|%x|", ppuMemRead(EMU_PARAM, PIXEL_MAP_ADDR + (y * SPRITE_ENTRIES_PIXELS_X) + x));
+                            }
+                            fprintf(vramDumpFile, "\n");
+                        }
+                    } else printf("Couldn't open vram.log\n");
+                    fclose(vramDumpFile);
+                    vramDumpFile = NULL;
                 } else {
                     printf("Unrecognised command\n");
                 }
