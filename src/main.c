@@ -31,6 +31,7 @@ byte stacktraceEnd = 0;
 byte stacktraceStart = 0;
 unsigned ppuROMLen = 0;
 bool printSectionChanges = false;
+unsigned cyclesTakenToRenderAllSprites = 0;
 
 void ppuMemWrite(size_t param, ushort address, byte data);
 byte ppuMemRead(size_t param, ushort address);
@@ -155,6 +156,10 @@ void vStateCycle(VideoState* vstate, SDL_Renderer* renderer) {
 
 void execute(Z80Context* ctx) {
     unsigned PC = ctx->PC;
+    if (PC == 0x14d && cyclesTakenToRenderAllSprites > 1) {
+        printf("PPU took %d cycles to render all sprites\n", cyclesTakenToRenderAllSprites);
+        cyclesTakenToRenderAllSprites = 0;
+    }
     stacktrace[stacktraceEnd++] = PC;
     if (stacktraceEnd <= stacktraceStart) stacktraceStart++;
 
@@ -408,6 +413,7 @@ int main(int argc, char** argv) {
         VideoSection prevSection = vState.section;
         vStateCycle(&vState, renderer);
         vStateCycle(&vState, renderer);
+        if (vState.section == VBLANK || vState.section == HBLANK) cyclesTakenToRenderAllSprites++;
         if (vState.section == HBLANK && prevSection != HBLANK) {
             SDL_RenderPresent(renderer);
             Z80INT(&PPU, 0);

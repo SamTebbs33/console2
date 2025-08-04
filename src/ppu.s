@@ -188,6 +188,7 @@ render:
     inc bc
     jp .loop_sprites
 .last_sprite:
+    nop
     ; Wait for the next display period
     halt
     ; When the next blanking period starts, the interrupt handler will jump here
