@@ -276,10 +276,12 @@ int main(int argc, char** argv) {
     Z80ExecuteTStates(&PPU, 60);
 
     // Set up demo
+    // Define palette
     ppuMemWrite(EMU_PARAM, PPU_REGS_ADDR + REG_PALETTE_BASE + 0, 0xFF);
     ppuMemWrite(EMU_PARAM, PPU_REGS_ADDR + REG_PALETTE_BASE + 1, 0xDD);
     ppuMemWrite(EMU_PARAM, PPU_REGS_ADDR + REG_PALETTE_BASE + 2, 0xBB);
     ppuMemWrite(EMU_PARAM, PPU_REGS_ADDR + REG_PALETTE_BASE + 3, 0x99);
+    // Define sprites
     unsigned spriteNo = 0;
     for (unsigned row = 0; row < 8; row++) {
         for (unsigned column = 0; column < 4; column++) {
@@ -294,9 +296,11 @@ int main(int argc, char** argv) {
     }
     bool spriteOne = false;
     for (unsigned entry = 0; entry < SPRITE_ENTRIES_NUM; entry++) {
-        ppuMemWrite(EMU_PARAM, SPRITE_TABLE_ADDR + (entry * SPRITE_ENTRY_SIZE), 0);
-        ppuMemWrite(EMU_PARAM, SPRITE_TABLE_ADDR + (entry * SPRITE_ENTRY_SIZE) + 1, 0);
-        ppuMemWrite(EMU_PARAM, SPRITE_TABLE_ADDR + (entry * SPRITE_ENTRY_SIZE) + 2, spriteOne ? 1 : 0);
+        uint16_t spriteAddr = SPRITE_DEFS_ADDR + 32 * (spriteOne ? 1 : 0);
+        ppuMemWrite(EMU_PARAM, SPRITE_TABLE_ADDR + (entry * SPRITE_ENTRY_SIZE), 0); // anim index
+        ppuMemWrite(EMU_PARAM, SPRITE_TABLE_ADDR + (entry * SPRITE_ENTRY_SIZE) + 1, 0); // frame counter
+        ppuMemWrite(EMU_PARAM, SPRITE_TABLE_ADDR + (entry * SPRITE_ENTRY_SIZE) + 2, spriteAddr & 0xFF); // sprite addr low byte
+        ppuMemWrite(EMU_PARAM, SPRITE_TABLE_ADDR + (entry * SPRITE_ENTRY_SIZE) + 3, spriteAddr >> 8); // sprite addr high byte
         spriteOne = !spriteOne;
     }
 
