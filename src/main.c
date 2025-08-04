@@ -66,7 +66,6 @@ void ppuMemWrite(size_t param, ushort address, byte data) {
     if (param == CPU_PARAM) {
         if (mem == ppuCodeROM) printf("error: Writing to ppu ROM address %x after PC %x\n", address, PPU.PC);
         else if (mem == ppuDefROM) printf("error: Writing to ppu def ROM address %x after PC %x\n", address, PPU.PC);
-        else if (mem == tableRAM && originalAddress < PPU_REGS_ADDR) printf("error: Writing to table RAM address %x after PC %x\n", address, PPU.PC);
     }
     mem[address] = data;
 }
