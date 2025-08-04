@@ -17,17 +17,25 @@
 #define STACK_TOP (64 * 1024)
 #define STACK_BOTTOM (64 * 1024 - STACK_SIZE)
 
+#define CPU_PARAM 0
+#define EMU_PARAM 1
+
 byte tableRAM[8 * 1024];
 byte ppuRAM[(ushort)32 * 1024];
 byte ppuCodeROM[8 * 1024];
 byte ppuDefROM[16 * 1024];
 unsigned debugStack[32 * 1024];
 unsigned debugSP = 32 * 1024 - 1;
+ushort stacktrace[255];
+byte stacktraceEnd = 0;
+byte stacktraceStart = 0;
+unsigned ppuROMLen = 0;
+bool printSectionChanges = false;
 
 void ppuMemWrite(size_t param, ushort address, byte data);
 byte ppuMemRead(size_t param, ushort address);
 
-Z80Context PPU = {.memRead = ppuMemRead, .memWrite = ppuMemWrite, .memParam = 0, .ioParam = 0};
+Z80Context PPU = {.memRead = ppuMemRead, .memWrite = ppuMemWrite, .memParam = CPU_PARAM, .ioParam = CPU_PARAM};
 
 byte* ppuMemMap(ushort address, ushort* relAddress) {
     if (address < PPU_CODE_END) {
@@ -52,11 +60,13 @@ byte ppuMemRead(size_t param, ushort address) {
 
 void ppuMemWrite(size_t param, ushort address, byte data) {
     ushort originalAddress = address;
-    if (originalAddress == 0x2b32) printf("Writing %x to render state by PC %x\n", data, PPU.PC);
+    //if (originalAddress == 0x2b32) printf("Writing %x to render state by PC %x\n", data, PPU.PC);
     byte* mem = ppuMemMap(address, &address);
-    if (mem == ppuCodeROM) printf("error: Writing to ppu ROM address %x after PC %x\n", address, PPU.PC);
-    else if (mem == ppuDefROM) printf("error: Writing to ppu def ROM address %x after PC %x\n", address, PPU.PC);
-    else if (mem == tableRAM && originalAddress < PPU_REGS_ADDR) printf("error: Writing to table RAM address %x after PC %x\n", address, PPU.PC);
+    if (param == CPU_PARAM) {
+        if (mem == ppuCodeROM) printf("error: Writing to ppu ROM address %x after PC %x\n", address, PPU.PC);
+        else if (mem == ppuDefROM) printf("error: Writing to ppu def ROM address %x after PC %x\n", address, PPU.PC);
+        else if (mem == tableRAM && originalAddress < PPU_REGS_ADDR) printf("error: Writing to table RAM address %x after PC %x\n", address, PPU.PC);
+    }
     mem[address] = data;
 }
 
@@ -75,13 +85,21 @@ char* toString(VideoSection section) {
 }
 
 void drawPixel(SDL_Renderer* renderer, unsigned x, unsigned y, unsigned pixelOffset) {
-    uint8_t pixel = ppuMemRead(1, PIXEL_MAP_ADDR + (pixelOffset / 4));
-    uint8_t r = (pixel & 0b11);
-    r |= (r << 2) | (r << 4) | (r << 6);
-    uint8_t g = (pixel & 0b1100) >> 2;
-    g |= (g << 2) | (g << 4) | (g << 6);
-    uint8_t b = (pixel & 0b110000) >> 4;
-    b |= (b << 2) | (b << 4) | (b << 6);
+    uint8_t r, g, b;
+    // Draw a white border to show the displayable area
+    if (x >= 792 || y >= 592) {
+        r = 255;
+        g = 255;
+        b = 255;
+    } else {
+        uint8_t pixel = ppuMemRead(EMU_PARAM, PIXEL_MAP_ADDR + (pixelOffset / 4));
+        r = (pixel & 0b11);
+        r |= (r << 2) | (r << 4) | (r << 6);
+        g = (pixel & 0b1100) >> 2;
+        g |= (g << 2) | (g << 4) | (g << 6);
+        b = (pixel & 0b110000) >> 4;
+        b |= (b << 2) | (b << 4) | (b << 6);
+    }
     SDL_SetRenderDrawColor(renderer, r, g, b, 255);
     SDL_RenderDrawPoint(renderer, x, y);
 }
@@ -144,9 +162,21 @@ void vStateCycle(VideoState* vstate, SDL_Renderer* renderer) {
 
 void execute(Z80Context* ctx) {
     unsigned PC = ctx->PC;
-    byte opc1 = ppuMemRead(1, PC);
-    byte opc2 = ppuMemRead(1, PC + 1);
+    stacktrace[stacktraceEnd++] = PC;
+    if (stacktraceEnd <= stacktraceStart) stacktraceStart++;
+
+    byte opc1 = ppuMemRead(EMU_PARAM, PC);
+    byte opc2 = ppuMemRead(EMU_PARAM, PC + 1);
     switch (opc1) {
+        // RETI
+        case 0xED: {
+            if (opc2 == 0x4D) {
+                ushort SP = ctx->R1.wr.SP;
+                ushort retAddr = ppuMemRead(EMU_PARAM, SP) | (ppuMemRead(EMU_PARAM, SP + 1) << 8);
+                if (retAddr >= ppuROMLen) printf("Returning from interrupt with return address outside PPU code (%x)\n", retAddr);
+            }
+            break;
+        }
         case 0xDD:
         case 0xFD:
             if (opc2 == 0xE1 ) {
@@ -179,6 +209,31 @@ void execute(Z80Context* ctx) {
     Z80Execute(ctx);
 }
 
+void printRegisters(Z80Context* cpu) {
+    Z80Regs regs = cpu->R1;
+    printf("Regs:\n\tA: %d, F: %d, AF: %d\n\tB: %d, C: %d, BC: %d\n\tD: %d, E: %d, DE: %d\n\tH: %d, L: %d, HL: %d\n\tIX: %d\n\tIY: %d\n\tSP: %d\n", regs.br.A, regs.br.F, regs.wr.AF, regs.br.B, regs.br.C, regs.wr.BC, regs.br.D, regs.br.E, regs.wr.DE, regs.br.H, regs.br.L, regs.wr.HL, regs.wr.IX, regs.wr.IY, regs.wr.SP);
+}
+
+void printStackTrace() {
+    printf("Stack trace:\n");
+    byte idx = stacktraceEnd;
+    byte prev = 0;
+    byte repeated = 0;
+    while (idx != stacktraceStart) {
+        byte b = stacktrace[idx--];
+        if (b == prev)
+            repeated++;
+        else if (repeated > 1) {
+            printf("repeated %d times\n", repeated);
+            repeated = 0;
+        } else
+            printf("%x\n", b);
+        prev = b;
+    }
+    if (repeated > 1) printf("repeated %d times\n", repeated);
+    printRegisters(&PPU);
+}
+
 int main(int argc, char** argv) {
     if (argc < 2) {
         printf("Expected ppu ROM path\n");
@@ -193,8 +248,8 @@ int main(int argc, char** argv) {
         printf("Couldn't open %s\n", ppuROMPath);
         return 1;
     }
-    int bytesRead = fread(ppuCodeROM, sizeof(byte), sizeof(ppuCodeROM), ppuROMFile);
-    printf("Read %d bytes\n", bytesRead);
+    ppuROMLen = fread(ppuCodeROM, sizeof(byte), sizeof(ppuCodeROM), ppuROMFile);
+    printf("Read %d bytes\n", ppuROMLen);
     fclose(ppuROMFile);
 
     if (SDL_SetHintWithPriority(SDL_HINT_NO_SIGNAL_HANDLERS, "1", SDL_HINT_OVERRIDE) == SDL_FALSE) {
@@ -217,45 +272,39 @@ int main(int argc, char** argv) {
     SDL_RenderPresent(renderer);
 
     memset(tableRAM, 0, sizeof(tableRAM));
-    memset(ppuRAM, 0, sizeof(ppuRAM));
+    memset(ppuRAM, 0x00, sizeof(ppuRAM));
     memset(ppuDefROM, 0, sizeof(ppuDefROM));
+    memset(stacktrace, 0, sizeof(stacktrace));
 
     Z80RESET(&PPU);
 
     // Give PPU a few cycles to set up stack
     Z80ExecuteTStates(&PPU, 60);
+
     // Set up demo
-    ppuMemWrite(0, PPU_REGS_ADDR + REG_PALETTE_BASE + 0, 0xFF);
-    ppuMemWrite(0, PPU_REGS_ADDR + REG_PALETTE_BASE + 1, 0xDD);
-    ppuMemWrite(0, PPU_REGS_ADDR + REG_PALETTE_BASE + 2, 0xBB);
-    ppuMemWrite(0, PPU_REGS_ADDR + REG_PALETTE_BASE + 3, 0x99);
+    ppuMemWrite(EMU_PARAM, PPU_REGS_ADDR + REG_PALETTE_BASE + 0, 0xFF);
+    ppuMemWrite(EMU_PARAM, PPU_REGS_ADDR + REG_PALETTE_BASE + 1, 0xDD);
+    ppuMemWrite(EMU_PARAM, PPU_REGS_ADDR + REG_PALETTE_BASE + 2, 0xBB);
+    ppuMemWrite(EMU_PARAM, PPU_REGS_ADDR + REG_PALETTE_BASE + 3, 0x99);
     unsigned spriteNo = 0;
     for (unsigned row = 0; row < 8; row++) {
         for (unsigned column = 0; column < 4; column++) {
-            ppuDefROM[32 + (32 * spriteNo) + (row * 4) + column] = 0b00010001;
+            ppuDefROM[(32 * spriteNo) + (row * 4) + column] = 0b00010001;
         }
     }
     spriteNo = 1;
     for (unsigned row = 0; row < 8; row++) {
         for (unsigned column = 0; column < 4; column++) {
-            ppuDefROM[32 + (32 * spriteNo) + (row * 4) + column] = 0b00100010;
+            ppuDefROM[(32 * spriteNo) + (row * 4) + column] = 0b00100010;
         }
     }
-    spriteNo = 2;
-    for (unsigned row = 0; row < 8; row++) {
-        for (unsigned column = 0; column < 4; column++) {
-            ppuDefROM[32 + (32 * spriteNo) + (row * 4) + column] = 0b00110011;
-        }
+    bool spriteOne = false;
+    for (unsigned entry = 0; entry < SPRITE_ENTRIES_NUM; entry++) {
+        ppuMemWrite(EMU_PARAM, SPRITE_TABLE_ADDR + (entry * SPRITE_ENTRY_SIZE), 0);
+        ppuMemWrite(EMU_PARAM, SPRITE_TABLE_ADDR + (entry * SPRITE_ENTRY_SIZE) + 1, 0);
+        ppuMemWrite(EMU_PARAM, SPRITE_TABLE_ADDR + (entry * SPRITE_ENTRY_SIZE) + 2, spriteOne ? 1 : 0);
+        spriteOne = !spriteOne;
     }
-    tableRAM[0] = 0;
-    tableRAM[1] = 0;
-    tableRAM[2] = 1;
-    tableRAM[3] = 0;
-    tableRAM[4] = 0;
-    tableRAM[5] = 2;
-    tableRAM[6] = 0;
-    tableRAM[7] = 0;
-    tableRAM[8] = 3;
 
     VideoState vState = { .section = DISPLAY, .hCounter = 0, .vCounter = 0, .pixelOffset = 0};
 
@@ -282,18 +331,18 @@ int main(int argc, char** argv) {
                     waitForInput = false;
                     waitFor = VBLANK;
                 } else if (strcmp(cmd, "h\n") == 0) {
+                    printf("Waiting until hblank\n");
                     waitForInput = false;
                     waitFor = HBLANK;
                 } else if (strcmp(cmd, "r\n") == 0) {
-                    Z80Regs regs = PPU.R1;
-                    printf("Regs:\n\tA: %d, F: %d, AF: %d\n\tB: %d, C: %d, BC: %d\n\tD: %d, E: %d, DE: %d\n\tH: %d, L: %d, HL: %d\n\tIX: %d\n\tIY: %d\n\tSP: %d\n", regs.br.A, regs.br.F, regs.wr.AF, regs.br.B, regs.br.C, regs.wr.BC, regs.br.D, regs.br.E, regs.wr.DE, regs.br.H, regs.br.L, regs.wr.HL, regs.wr.IX, regs.wr.IY, regs.wr.SP);
+                    printRegisters(&PPU);
                 } else if (strcmp(cmd, "s\n") == 0) {
                     Z80Regs regs = PPU.R1;
                     printf("Stack:\n");
                     unsigned sp = regs.wr.SP;
                     unsigned debugSPCopy = debugSP;
                     while (sp < STACK_TOP) {
-                        byte b = ppuMemRead(0, sp);
+                        byte b = ppuMemRead(EMU_PARAM, sp);
                         printf("\t%d (pushed by %x)\n", b, debugStack[debugSPCopy++]);
                         sp++;
                     }
@@ -316,6 +365,7 @@ int main(int argc, char** argv) {
                         printf("Skipping to %x\n", instrToSkipTo);
                     }
                 } else if (strcmp(cmd, "d\n") == 0) {
+                    printf("Waiting until display\n");
                     waitForInput = false;
                     waitFor = DISPLAY;
                     /*
@@ -331,7 +381,7 @@ int main(int argc, char** argv) {
                 } else if (cmd[0] == 'm' && strlen(cmd) > 1) {
                     int addr = strtol(cmd + 1, NULL, 16);
                     if (addr > -1) {
-                        byte b = ppuMemRead(0, addr);
+                        byte b = ppuMemRead(EMU_PARAM, addr);
                         printf("Byte at addr %x is %d\n", addr, b);
                     }
                 } else {
@@ -348,14 +398,14 @@ int main(int argc, char** argv) {
         vStateCycle(&vState, renderer);
         if (vState.section == HBLANK && prevSection != HBLANK) {
             SDL_RenderPresent(renderer);
-            Z80NMI(&PPU);
-            if (debug) printf("HBLANK triggered\n");
+            Z80INT(&PPU, 0);
+            if (debug && printSectionChanges) printf("HBLANK triggered\n");
         } else if (vState.section == DISPLAY && prevSection != DISPLAY) {
-            printf("PPU was rendering for %d cycles\n", renderCycles);
+            //printf("PPU was rendering for %d cycles\n", renderCycles);
             Z80NMI(&PPU);
             renderCycles = 0;
         } else if (vState.section == VBLANK && prevSection != VBLANK) {
-            if (debug) printf("VBLANK started\n");
+            if (debug && printSectionChanges) printf("VBLANK triggered\n");
         }
 
         if (waitFor == vState.section && prevSection != vState.section) {
@@ -368,6 +418,7 @@ int main(int argc, char** argv) {
 
         if (PPU.R1.wr.SP < STACK_BOTTOM) {
             printf("Stack overflowed to address %x at PC %x\n", PPU.R1.wr.SP, PPU.PC);
+            printStackTrace();
             return 1;
         }
     }

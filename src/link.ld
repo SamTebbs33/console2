@@ -18,6 +18,8 @@ SECTIONS
     .text :
     {
         *(.start)
+        . = 0x0038;
+        *(.intHandler)
         . = 0x0066;
         *(.nmiHandler)
         *(.text)

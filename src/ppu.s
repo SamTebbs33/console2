@@ -17,71 +17,45 @@ SPRITE_ENTRY_SIZE = 3
 TILE_TABLE_ADDR = SPRITE_TABLE_ADDR + (SPRITE_ENTRY_SIZE * SPRITE_ENTRIES_NUM)
 PPU_REGS_ADDR = (TILE_TABLE_ADDR + (SPRITE_ENTRIES_NUM * SPRITE_ENTRY_SIZE))
 REG_PALETTE_BASE = 0
-; Used to know if the PPU was interrupted while spinning or rendering.
-; If it's 0, then it was interrupted when rendering.
-REG_RENDER_STATE = REG_PALETTE_BASE + 16
-REG_HL_SAVE = REG_RENDER_STATE + 2
-REG_DE_SAVE = REG_HL_SAVE + 2
 
 .extern _stack_end
 
 .section .start
 .global _start
 _start:
+    ; The interrupt handler takes the return address from hl
     ld hl, render
-    ld (PPU_REGS_ADDR + REG_RENDER_STATE), hl
     ld ix, _stack_end
     ld sp, ix
+    im 1
     ei
     jp spin
 
+.section .intHandler
+.global _intHandler
+; An interrupt means we're transitioning from spinning to rendering
+_intHandler:
+    ; Remove return address from top of stack and put saved render address there instead
+    ex (sp), hl
+    ; Restore previously saved regs from last rendering period
+    ex af, af'
+    exx
+    ei
+    reti
+
 .section .nmiHandler
 .global _nmiHandler
+; An NMI means we're transitioning from rendering to spinning
 _nmiHandler:
-    ld (PPU_REGS_ADDR + REG_HL_SAVE), hl
-    ld (PPU_REGS_ADDR + REG_DE_SAVE), de
-    ; Load render return address and compare to 0
-    ld hl, (PPU_REGS_ADDR + REG_RENDER_STATE)
-    or a ; Clear carry bit
-    ld de, 0
-    sbc hl, de
-    jr nz, .was_spinning
-    ; Put saved return address in render state variable
-    pop hl
-    ld (PPU_REGS_ADDR + REG_RENDER_STATE), hl
-    ; Return to the spin subroutine
-    ld de, spin
-    push de
-    ; Restore saved hl and de, then save registers for next time we go to render subroutine
-    ld hl, (PPU_REGS_ADDR + REG_HL_SAVE)
-    ld de, (PPU_REGS_ADDR + REG_DE_SAVE)
-    ex af, af'
+    ; Save regs. Spinning doesn't modify the regs so we don't have to worry about them being clobbered before the next rendering period
     exx
-    retn
-.was_spinning:
-    ; Fill render state with 0 so we know we were rendering next time we get an interrupt
-    ld hl, 0
-    ld (PPU_REGS_ADDR + REG_RENDER_STATE), hl
-    ; Remove return address from top of stack and put render subroutine there instead
-    ld de, render
-    pop hl
-    push de
-    ; Restore previously saved regs
     ex af, af'
-    exx
+    ; Replace nmi return address with spin function then save return address
+    ld hl, spin
+    ex (sp), hl
     retn
 
-; if (was_spinning)
-;   put 0 in render_state
-;   put render at top of stack
-;   restore regs
-;   retn
-; else
-;   put ret addr in render_state
-;   put spin at top of stack
-;   restore regs
-;   retn
-
+.section .text
 spin:
     halt
 
@@ -106,6 +80,8 @@ render:
     ld l, a
     add hl, hl
     add hl, hl
+    ld d, h
+    ld e, l
     ; iy now has the address of the animation
     add iy, de
     ; Process speed if the animation has speed
@@ -186,25 +162,84 @@ render:
     add iy, de ; iy now has the full pixel map address for this sprite
 
     ; Loop through each pixel and put it in ram with correct colour from palette
-    ld e, 0 ; y counter
-.loop_y:
-    push de ; save y counter
+    call renderY
+    jp nc, .next_sprite
+    call renderY
+    jp nc, .next_sprite
+    call renderY
+    jp nc, .next_sprite
+    call renderY
+    jp nc, .next_sprite
+    call renderY
+    jp nc, .next_sprite
+    call renderY
+    jp nc, .next_sprite
+    call renderY
+    jp nc, .next_sprite
+    call renderY
+.next_sprite:
+    pop ix ; Now we need the sprite entry addr again
+    inc ix ; Increment sprite entry addr
+    ; Increment the sprite entry counter and check if we've done the last entry
+    pop bc
+    ld a, c
+    ; TODO Improve comparison by using sub instruction
+    cp SPRITE_ENTRIES_NUM_LOW
+    jp nz, .not_last_sprite
+    ld a, b
+    cp SPRITE_ENTRIES_NUM_HIGH
+    jp z, .last_sprite
+.not_last_sprite:
+    inc bc
+    jp .loop_sprites
+.last_sprite:
+    ; Wait for the next display period
+    halt
+    ; When the next blanking period starts, the interrupt handler will jump here
+    jp render
+
+renderY:
     push hl ; save the sprite def addr and use local copy for this y iteration. Means we can break out of the x loop and not have to add missed iterations
     push iy ; save pixel address. Save it for same reason as hl
     push bc ; save base x and y coords
-    ld d, 0 ; x counter
-.loop_x:
     ld a, b
-    cp 199 ; bounds check. check 199 instead of 200 so that we know we can add two pixels to the screen
+    call renderX
     jp nc, .next_y
+    call renderX
+    jp nc, .next_y
+    call renderX
+    jp nc, .next_y
+    call renderX
+.next_y:
+    ; restore x and y coords to bc and add 1 to c. this is the new y coord
+    pop bc
+    pop iy
+    pop hl
+    inc c
+    ld a, c
+    cp 150
+    ret nc
+    ; add 200 to the pixel map addr
+    ld e, 200
+    ld d, 0
+    add iy, de
+    ; add 4 to sprite def addr. x will have its own copy, in case it has to break out due to out of bounds coords
+    ld e, 4
+    add hl, de
+    ; Compare y bound again so that the caller can quickly check if more lines need to be rendered
+    cp 150
+    ret
+
+renderX:
+    cp 199 ; x coord should have been moved to a, so make a bounds check. check 199 instead of 200 so that we know we can add two pixels to the screen
+    ret nc
     inc b
     ld a, (hl) ; a has the two pixels for this sprite def index
     inc hl  ; hl is now at the next sprite def addr
     ld c, a ; save pixels
     and 0xF ; first pixel
-    ; Add palette idex to palette address
+    ; Add palette index to palette address
     ld ix, PPU_REGS_ADDR + REG_PALETTE_BASE
-    push de
     ld d, 0
     ld e, a
     add ix, de
@@ -224,47 +259,9 @@ render:
     ld a, (ix)
     ld (iy), a
     inc iy
-    pop de
-.next_x:
-    inc d
-    ld a, d
-    cp 4
-    jp nz, .loop_x
-.next_y:
-    ; restore to bc and add 1 to c. this is the new y coord
-    pop bc
-    inc c
-    ld a, c
-    cp 150
-    jp nc, .y_out_of_bounds
-    ; restore to iy and add 200 to the pixel map addr
-    pop iy
-    ld e, 200
-    ld d, 0
-    add iy, de
-    ; restore to hl and add 4 to sprite def addr. x will have its own copy, in case it has to break out due to out of bounds coords
-    pop hl
-    ld e, 4
-    add hl, de
-    pop de ; restore the y counter in e
-    inc e
-    ld a, e
-    cp 8
-    jp nz, .loop_y
-    jp .next_sprite
-.y_out_of_bounds:
-    pop iy
-    pop hl
-    pop de
-.next_sprite:
-    pop ix ; Now we need the sprite entry addr again
-    inc ix ; Increment sprite entry addr
-    ; Increment the sprite entry counter and check if we've done the last entry
-    pop bc
-    inc bc
-    jp nz, .loop_sprites
+    ld a, b
+    cp 199
     ret
-
 
 ; A lookup table with the y pixel coordinate mapped to an offset into the pixel map, to be added to the x pixel coordinate
 pixel_lookup:
