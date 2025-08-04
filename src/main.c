@@ -299,6 +299,21 @@ int main(int argc, char** argv) {
             ppuDefROM[(32 * spriteNo) + (row * 4) + column] = 0b00100010;
         }
     }
+
+    // Define animations
+    ppuMemWrite(EMU_PARAM, ANIMATION_DEFS_ADDR + 4, 50); // speed
+    ppuMemWrite(EMU_PARAM, ANIMATION_DEFS_ADDR + 4 + 1, 2); // next index
+    ppuMemWrite(EMU_PARAM, ANIMATION_DEFS_ADDR + 4 + 2, 0); // x and y offset
+    ppuMemWrite(EMU_PARAM, ANIMATION_DEFS_ADDR + 4 + 3, 0); // sprite offset
+    ppuMemWrite(EMU_PARAM, ANIMATION_DEFS_ADDR + 4 + 4, 0); // metadata
+
+    ppuMemWrite(EMU_PARAM, ANIMATION_DEFS_ADDR + 8, 50); // speed
+    ppuMemWrite(EMU_PARAM, ANIMATION_DEFS_ADDR + 8 + 1, 1); // next index
+    ppuMemWrite(EMU_PARAM, ANIMATION_DEFS_ADDR + 8 + 2, 0b01000100); // x and y offset
+    ppuMemWrite(EMU_PARAM, ANIMATION_DEFS_ADDR + 8 + 3, 0); // sprite offset
+    ppuMemWrite(EMU_PARAM, ANIMATION_DEFS_ADDR + 8 + 4, 0); // metadata
+
+    // Fill sprite entries
     bool spriteOne = false;
     for (unsigned entry = 0; entry < SPRITE_ENTRIES_NUM; entry++) {
         uint16_t spriteAddr = SPRITE_DEFS_ADDR + 32 * (spriteOne ? 1 : 0);
