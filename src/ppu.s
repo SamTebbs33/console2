@@ -22,6 +22,46 @@ REG_PALETTE_BASE = 0
 
 .extern _stack_end
 
+.macro renderX
+    ; Put two pixels from current sprite def address into VRAM
+    ld a, (hl) ; a has the two pixels for this sprite def addr
+    inc hl  ; hl is now at the next sprite def addr
+    ld c, a ; save pixels
+    and 0xF ; first pixel
+    ; Add palette index to palette address
+    ld ix, PPU_REGS_ADDR + REG_PALETTE_BASE
+    ld d, 0
+    ld e, a
+    add ix, de
+    ; Put the colour from the palette into pixel mem
+    ld a, (ix)
+    ld (iy), a
+    inc iy
+    ; Extract the top 4 bits from the saved pixel byte
+    ld e, c
+    srl e
+    srl e
+    srl e
+    srl e
+    ; Put the colour into pixel mem
+    ld ix, PPU_REGS_ADDR + REG_PALETTE_BASE
+    add ix, de
+    ld a, (ix)
+    ld (iy), a
+    inc iy
+.endm
+
+.macro renderY
+    RENDERX
+    RENDERX
+    RENDERX
+    RENDERX
+    ; move pixel address to next line
+    ld e, SPRITE_ENTRIES_PIXELS_X - SPRITE_DEF_PIXELS_X
+    ld d, 0
+    add iy, de
+.endm
+
 .section .start
 .global _start
 _start:
@@ -158,15 +198,14 @@ render:
     ld d, (ix + 1) ; de how has the pixel map offset
     add iy, de ; iy now has the full pixel map address for this sprite
 
-    ; Loop through each pixel and put it in ram with correct colour from palette
-    call renderY
-    call renderY
-    call renderY
-    call renderY
-    call renderY
-    call renderY
-    call renderY
-    call renderY
+    RENDERY
+    RENDERY
+    RENDERY
+    RENDERY
+    RENDERY
+    RENDERY
+    RENDERY
+    RENDERY
 .next_sprite:
     pop ix ; Now we need the sprite entry addr again
     inc ix ; Increment sprite entry addr
@@ -188,46 +227,6 @@ render:
     halt
     ; When the next blanking period starts, the interrupt handler will jump here
     jp render
-
-renderY:
-    call renderX
-    call renderX
-    call renderX
-    call renderX
-.next_y:
-    ; move pixel address to next line
-    ld e, SPRITE_ENTRIES_PIXELS_X - SPRITE_DEF_PIXELS_X
-    ld d, 0
-    add iy, de
-    ret
-
-renderX:
-    ld a, (hl) ; a has the two pixels for this sprite def index
-    inc hl  ; hl is now at the next sprite def addr
-    ld c, a ; save pixels
-    and 0xF ; first pixel
-    ; Add palette index to palette address
-    ld ix, PPU_REGS_ADDR + REG_PALETTE_BASE
-    ld d, 0
-    ld e, a
-    add ix, de
-    ; Put the colour from the palette into pixel mem
-    ld a, (ix)
-    ld (iy), a
-    inc iy
-    ; Extract the top 4 bits from the saved pixel byte
-    ld e, c
-    srl e
-    srl e
-    srl e
-    srl e
-    ; Put the colour into pixel mem
-    ld ix, PPU_REGS_ADDR + REG_PALETTE_BASE
-    add ix, de
-    ld a, (ix)
-    ld (iy), a
-    inc iy
-    ret
 
 ; A lookup table with the y pixel coordinate mapped to an offset into the pixel map, to be added to the x pixel coordinate
 pixel_lookup:
