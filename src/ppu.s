@@ -206,22 +206,17 @@ render:
     RENDERY
     RENDERY
     RENDERY
-.next_sprite:
+
     pop ix ; Now we need the sprite entry addr again
     inc ix ; Increment sprite entry addr
     ; Increment the sprite entry counter and check if we've done the last entry
     pop bc
-    ld a, c
-    ; TODO Improve comparison by using sub instruction
-    cp SPRITE_ENTRIES_NUM_LOW
-    jp nz, .not_last_sprite
-    ld a, b
-    cp SPRITE_ENTRIES_NUM_HIGH
-    jp z, .last_sprite
-.not_last_sprite:
     inc bc
-    jp .loop_sprites
-.last_sprite:
+    ld l, SPRITE_ENTRIES_NUM_LOW
+    ld h, SPRITE_ENTRIES_NUM_HIGH
+    or a
+    sbc hl, bc
+    jp nz, .loop_sprites
     ; Wait for the next display period
     nop
     halt
