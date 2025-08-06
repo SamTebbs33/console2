@@ -155,7 +155,7 @@ void vStateCycle(VideoState* vstate, SDL_Renderer* renderer) {
 
 void execute(Z80Context* ctx) {
     unsigned PC = ctx->PC;
-    if (PC == 0x6ea && cyclesTakenToRenderAllSprites > 1) {
+    if (PC == 0x6ee && cyclesTakenToRenderAllSprites > 1) {
         printf("PPU took %d cycles to render all sprites\n", cyclesTakenToRenderAllSprites);
         cyclesTakenToRenderAllSprites = 0;
     }
@@ -295,7 +295,10 @@ int main(int argc, char** argv) {
     spriteNo = 1;
     for (unsigned row = 0; row < 8; row++) {
         for (unsigned column = 0; column < 4; column++) {
-            ppuDefROM[(32 * spriteNo) + (row * 4) + column] = 0b00100010;
+            byte pixels;
+            if (row % 2 == 0) pixels = column % 2 == 0 ? 0b00000001 : 0b00010000;
+            else pixels = column % 2 == 0 ? 0b00100011 : 0b00110010;
+            ppuDefROM[(32 * spriteNo) + (row * 4) + column] = pixels;
         }
     }
 

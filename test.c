@@ -16,9 +16,8 @@ int main(int argc, char** argv) {
             for (unsigned x = 0; x < 800; x++) printf("Drawing from %x at %d,%d\n", pixelOffset++, x, y);
         }
     } else {
-        for (unsigned char y = 0; y < 19 * 8; y += 8) {
+        for (unsigned char y = 0; y < 19 * 8; y++) {
             printf(".dcb.w 1, %d\n", y * 200);
-            printf(".dcb.b 6, 0\n");
         }
     }
     return 0;
