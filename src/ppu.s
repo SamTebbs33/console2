@@ -22,7 +22,7 @@ REG_PALETTE_BASE = 0
 
 .extern _stack_end
 
-.macro renderX
+.macro RENDERX
     ; Put two pixels from current sprite def address into VRAM
     ld a, (hl) ; a has the two pixels for this sprite def addr
     inc hl  ; hl is now at the next sprite def addr
@@ -51,7 +51,7 @@ REG_PALETTE_BASE = 0
     inc iy
 .endm
 
-.macro renderY
+.macro RENDERY
     RENDERX
     RENDERX
     RENDERX
@@ -102,7 +102,7 @@ spin:
     halt
 
 render:
-    ld bc, 0 ; sprite entry counter
+    ld bc, SPRITE_ENTRIES_NUM ; sprite entry counter
     ld ix, SPRITE_TABLE_ADDR
 .loop_sprites:
     push bc ; Save the sprite entry counter. We don't need it again until checking if we've rendered all sprites
@@ -211,11 +211,11 @@ render:
     inc ix ; Increment sprite entry addr
     ; Increment the sprite entry counter and check if we've done the last entry
     pop bc
-    inc bc
-    ld l, SPRITE_ENTRIES_NUM_LOW
-    ld h, SPRITE_ENTRIES_NUM_HIGH
-    or a
-    sbc hl, bc
+    dec bc
+    xor a
+    or b
+    jp nz, .loop_sprites
+    or c
     jp nz, .loop_sprites
     ; Wait for the next display period
     nop
