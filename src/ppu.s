@@ -15,7 +15,7 @@ SPRITE_ENTRIES_NUM_LOW = SPRITE_ENTRIES_NUM & 0xFF
 SPRITE_ENTRIES_NUM_HIGH = SPRITE_ENTRIES_NUM >> 8
 SPRITE_ENTRIES_PIXELS_X = (SPRITE_ENTRIES_NUM_X * SPRITE_DEF_PIXELS_X)
 SPRITE_ENTRIES_PIXELS_Y = (SPRITE_ENTRIES_NUM_Y * SPRITE_DEF_PIXELS_Y - 2)
-SPRITE_ENTRY_SIZE = 6
+SPRITE_ENTRY_SIZE = 4
 TILE_TABLE_ADDR = (SPRITE_TABLE_ADDR + (SPRITE_ENTRY_SIZE * SPRITE_ENTRIES_NUM))
 PPU_REGS_ADDR = (TILE_TABLE_ADDR + (SPRITE_ENTRIES_NUM * SPRITE_ENTRY_SIZE))
 REG_PALETTE_BASE = 0
@@ -106,81 +106,19 @@ render:
     ld ix, SPRITE_TABLE_ADDR
 .loop_sprites:
     push bc ; Save the sprite entry counter. We don't need it again until checking if we've rendered all sprites
-    ld iy, ANIMATION_DEFS_ADDR
-    ld a, (ix) ; Animation index from sprite
-    inc ix ; ix is now at frame counter
-    or a
-    jp nz, .hasAnimation
-    inc ix ; ix is now at x coord
-    ld bc, 0 ; b and c store the x and y render offsets, respectively
-    ld de, 0 ; e stores the sprite offset
-    push de ; render_sprite expects the sprite offset to be on the stack
-    jp .render_sprite
-.hasAnimation:
-    ; Multiply the anim index by 4 to get the offset into the animation def table
-    ld h, 0
-    ld l, a
-    add hl, hl
-    add hl, hl
-    ld d, h
-    ld e, l
-    ; iy now has the address of the animation
-    add iy, de
-    ; Process speed if the animation has speed
-    ld a, (iy)
-    inc iy ; iy is now at the nextAnimIndex
-    or a
-    jp z, .computeOffsets
-    ; Compare speed with sprite's frame counter
-    ld d, (ix)
-    cp d
-    ; If the speed matches the frame counter, proceed to the next animation
-    jp z, .nextAnimIndex
-    inc (ix) ; Increment the frame counter
-    jp .computeOffsets
-.nextAnimIndex:
-    ld (ix), 0
-    ld d, (iy)
-    ld (ix - 1), d
-.computeOffsets:
-    inc iy ; Increment iy to point to cordinate offsets
-    inc ix ; ix is now at x coord
-    ; Extract the x offset from the bottom 4 bits
-    ld c, (iy)
-    ld a, c
-    and 0xF
-    ld b, a ; Now b has the x offset
-    ; Extract the y offset from the top 4 bits
-    srl c
-    srl c
-    srl c
-    srl c ; Now c has the y offset
-    ld a, (iy + 1) ; Load the metadata byte, including the sprite offset in the bottom 3 bits
-    and 0b111
-    ld e, a
-    xor d
-    push de ; de will be needed before the sprite offset is needed so save it to the stack
 .render_sprite:
-    ; b has the x offset, c has the y offset and e has the sprite offset (also saved to stack)
-    ; Load the appropriate x and y coordinates from coord_lookup then add to saved x and y offsets
-    ld a, (ix)
+    ld b, (ix) ; b now has the full x coord
     inc ix
-    add a, b
-    ld b, a ; b now has the full x coord
-    ld a, (ix)
+    ld c, (ix) ; c now has the full y coord
     inc ix ; ix is now at the sprite address
-    add a, c
-    ld c, a ; c now has the full y coord
-
-    pop de ; Restore the sprite offset we saved earlier
     ld l, (ix)
     inc ix
+    ld h, (ix) ; hl now has the sprite def addr
+    inc ix ; ix is now at the next sprite entry
     push ix ; We won't need the sprite entry addr until moving to the next sprite
-    ld h, (ix)
-    add hl, de ; hl now has the sprite def addr
     ; hl has sprite def addr
-    ; b has x coord with offset applied
-    ; c has y coord with offset applied
+    ; b has x coord
+    ; c has y coord
     ld iy, PIXEL_MAP_ADDR
     ld e, b
     ld d, 0
@@ -205,7 +143,6 @@ render:
     RENDERY
 
     pop ix ; Now we need the sprite entry addr again
-    inc ix ; Increment sprite entry addr
     ; Decrement the sprite entry counter and check if we've done the last entry
     pop bc
     dec bc

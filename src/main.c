@@ -155,7 +155,7 @@ void vStateCycle(VideoState* vstate, SDL_Renderer* renderer) {
 
 void execute(Z80Context* ctx) {
     unsigned PC = ctx->PC;
-    if (PC == 0x6e9 && cyclesTakenToRenderAllSprites > 1) {
+    if (PC == 0x686 && cyclesTakenToRenderAllSprites > 1) {
         printf("PPU took %d cycles to render all sprites\n", cyclesTakenToRenderAllSprites);
         cyclesTakenToRenderAllSprites = 0;
     }
@@ -302,31 +302,16 @@ int main(int argc, char** argv) {
         }
     }
 
-    // Define animations
-    ppuMemWrite(EMU_PARAM, ANIMATION_DEFS_ADDR + 4, 50); // speed
-    ppuMemWrite(EMU_PARAM, ANIMATION_DEFS_ADDR + 4 + 1, 2); // next index
-    ppuMemWrite(EMU_PARAM, ANIMATION_DEFS_ADDR + 4 + 2, 0); // x and y offset
-    ppuMemWrite(EMU_PARAM, ANIMATION_DEFS_ADDR + 4 + 3, 0); // sprite offset
-    ppuMemWrite(EMU_PARAM, ANIMATION_DEFS_ADDR + 4 + 4, 0); // metadata
-
-    ppuMemWrite(EMU_PARAM, ANIMATION_DEFS_ADDR + 8, 50); // speed
-    ppuMemWrite(EMU_PARAM, ANIMATION_DEFS_ADDR + 8 + 1, 1); // next index
-    ppuMemWrite(EMU_PARAM, ANIMATION_DEFS_ADDR + 8 + 2, 0b01000100); // x and y offset
-    ppuMemWrite(EMU_PARAM, ANIMATION_DEFS_ADDR + 8 + 3, 0); // sprite offset
-    ppuMemWrite(EMU_PARAM, ANIMATION_DEFS_ADDR + 8 + 4, 0); // metadata
-
     // Fill sprite entries
     bool spriteOne = false;
     byte x = 0;
     byte y = 0;
     for (unsigned entry = 0; entry < SPRITE_ENTRIES_NUM; entry++) {
         uint16_t spriteAddr = SPRITE_DEFS_ADDR + 32 * (spriteOne ? 1 : 0);
-        ppuMemWrite(EMU_PARAM, SPRITE_TABLE_ADDR + (entry * SPRITE_ENTRY_SIZE), 0); // anim index
-        ppuMemWrite(EMU_PARAM, SPRITE_TABLE_ADDR + (entry * SPRITE_ENTRY_SIZE) + 1, 0); // frame counter
-        ppuMemWrite(EMU_PARAM, SPRITE_TABLE_ADDR + (entry * SPRITE_ENTRY_SIZE) + 2, x); // x coord
-        ppuMemWrite(EMU_PARAM, SPRITE_TABLE_ADDR + (entry * SPRITE_ENTRY_SIZE) + 3, y); // y coord
-        ppuMemWrite(EMU_PARAM, SPRITE_TABLE_ADDR + (entry * SPRITE_ENTRY_SIZE) + 4, spriteAddr & 0xFF); // sprite addr low byte
-        ppuMemWrite(EMU_PARAM, SPRITE_TABLE_ADDR + (entry * SPRITE_ENTRY_SIZE) + 5, spriteAddr >> 8); // sprite addr high byte
+        ppuMemWrite(EMU_PARAM, SPRITE_TABLE_ADDR + (entry * SPRITE_ENTRY_SIZE) + 0, x); // x coord
+        ppuMemWrite(EMU_PARAM, SPRITE_TABLE_ADDR + (entry * SPRITE_ENTRY_SIZE) + 1, y); // y coord
+        ppuMemWrite(EMU_PARAM, SPRITE_TABLE_ADDR + (entry * SPRITE_ENTRY_SIZE) + 2, spriteAddr & 0xFF); // sprite addr low byte
+        ppuMemWrite(EMU_PARAM, SPRITE_TABLE_ADDR + (entry * SPRITE_ENTRY_SIZE) + 3, spriteAddr >> 8); // sprite addr high byte
         spriteOne = !spriteOne;
         x += 8;
         if (x >= SPRITE_ENTRIES_PIXELS_X) {
