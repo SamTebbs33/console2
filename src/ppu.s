@@ -5,7 +5,7 @@ SPRITE_DEF_NUM = 255
 SPRITE_DEF_PIXELS_X = 8
 SPRITE_DEF_PIXELS_Y = 8
 SPRITE_DEF_PIXELS_NUM = (SPRITE_DEF_PIXELS_X * SPRITE_DEF_PIXELS_Y)
-SPRITE_DEF_SIZE = (SPRITE_DEF_PIXELS_NUM / 2)
+SPRITE_DEF_SIZE = (SPRITE_DEF_PIXELS_NUM)
 SPRITE_DEF_MEM_SIZE = (SPRITE_DEF_SIZE * SPRITE_DEF_NUM)
 ANIMATION_DEFS_ADDR = (SPRITE_DEFS_ADDR + SPRITE_DEF_MEM_SIZE)
 SPRITE_ENTRIES_NUM_X = 25
@@ -18,48 +18,18 @@ SPRITE_ENTRIES_PIXELS_Y = (SPRITE_ENTRIES_NUM_Y * SPRITE_DEF_PIXELS_Y - 2)
 SPRITE_ENTRY_SIZE = 4
 TILE_TABLE_ADDR = (SPRITE_TABLE_ADDR + (SPRITE_ENTRY_SIZE * SPRITE_ENTRIES_NUM))
 PPU_REGS_ADDR = (TILE_TABLE_ADDR + (SPRITE_ENTRIES_NUM * SPRITE_ENTRY_SIZE))
-REG_PALETTE_BASE = 0
 
 .extern _stack_end
 
-.macro RENDERX
-    ; Put two pixels from current sprite def address into VRAM
-    ld a, (hl) ; a has the two pixels for this sprite def addr
-    inc hl  ; hl is now at the next sprite def addr
-    ld c, a ; save pixels
-    and 0xF ; first pixel
-    ; Add palette index to palette address
-    ld ix, PPU_REGS_ADDR + REG_PALETTE_BASE
-    ld d, 0
-    ld e, a
-    add ix, de
-    ; Put the colour from the palette into pixel mem
-    ld a, (ix)
-    ld (iy), a
-    inc iy
-    ; Extract the top 4 bits from the saved pixel byte
-    ld e, c
-    srl e
-    srl e
-    srl e
-    srl e
-    ; Put the colour into pixel mem
-    ld ix, PPU_REGS_ADDR + REG_PALETTE_BASE
-    add ix, de
-    ld a, (ix)
-    ld (iy), a
-    inc iy
-.endm
-
 .macro RENDERY
-    RENDERX
-    RENDERX
-    RENDERX
-    RENDERX
+    ; Copy 8 bytes from hl (sprite def addr) to de (pixel map addr)
+    ld bc, SPRITE_DEF_PIXELS_X
+    ldir
     ; move pixel address to next line
-    ld e, SPRITE_ENTRIES_PIXELS_X - SPRITE_DEF_PIXELS_X
-    ld d, 0
+    ld iy, SPRITE_ENTRIES_PIXELS_X - SPRITE_DEF_PIXELS_X
     add iy, de
+    ld d, iyh
+    ld e, iyl
 .endm
 
 .section .start
@@ -132,6 +102,8 @@ render:
     ld e, (ix)
     ld d, (ix + 1) ; de how has the pixel map offset
     add iy, de ; iy now has the full pixel map address for this sprite
+    ld d, iyh
+    ld e, iyl
 
     RENDERY
     RENDERY
