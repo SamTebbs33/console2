@@ -155,7 +155,7 @@ void vStateCycle(VideoState* vstate, SDL_Renderer* renderer) {
 
 void execute(Z80Context* ctx) {
     unsigned PC = ctx->PC;
-    if (PC == 0x132 && cyclesTakenToRenderAllSprites > 1) {
+    if (PC == 0x11ab && cyclesTakenToRenderAllSprites > 1) {
         printf("PPU took %d cycles to render all sprites\n", cyclesTakenToRenderAllSprites);
         cyclesTakenToRenderAllSprites = 0;
     }

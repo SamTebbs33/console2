@@ -32,6 +32,45 @@ PPU_REGS_ADDR = (TILE_TABLE_ADDR + (SPRITE_ENTRIES_NUM * SPRITE_ENTRY_SIZE))
     ld e, iyl
 .endm
 
+.macro RENDERSPRITE
+    ld b, (ix) ; b now has the full x coord
+    inc ix
+    ld c, (ix) ; c now has the full y coord
+    inc ix ; ix is now at the sprite address
+    ld l, (ix)
+    inc ix
+    ld h, (ix) ; hl now has the sprite def addr
+    inc ix ; ix is now at the next sprite entry
+    push ix ; We won't need the sprite entry addr until moving to the next sprite
+    ; hl has sprite def addr
+    ; b has x coord
+    ; c has y coord
+    ld iy, PIXEL_MAP_ADDR
+    ld e, b
+    ld d, 0
+    add iy, de
+    ; Find the pixel map offset corresponding to y and add it to iy. y must be multiplied by two since each entry in the lookup table takes two bytes
+    ld ix, pixel_lookup
+    ld e, c
+    sla e
+    rl d
+    add ix, de
+    ld e, (ix)
+    ld d, (ix + 1) ; de how has the pixel map offset
+    add iy, de ; iy now has the full pixel map address for this sprite
+    ld d, iyh
+    ld e, iyl
+    RENDERY
+    RENDERY
+    RENDERY
+    RENDERY
+    RENDERY
+    RENDERY
+    RENDERY
+    RENDERY
+    pop ix ; Now we need the sprite entry addr again
+.endm
+
 .section .start
 .global _start
 _start:
@@ -72,57 +111,16 @@ spin:
     halt
 
 render:
-    ld bc, SPRITE_ENTRIES_NUM ; sprite entry counter
     ld ix, SPRITE_TABLE_ADDR
-.loop_sprites:
-    push bc ; Save the sprite entry counter. We don't need it again until checking if we've rendered all sprites
-.render_sprite:
-    ld b, (ix) ; b now has the full x coord
-    inc ix
-    ld c, (ix) ; c now has the full y coord
-    inc ix ; ix is now at the sprite address
-    ld l, (ix)
-    inc ix
-    ld h, (ix) ; hl now has the sprite def addr
-    inc ix ; ix is now at the next sprite entry
-    push ix ; We won't need the sprite entry addr until moving to the next sprite
-    ; hl has sprite def addr
-    ; b has x coord
-    ; c has y coord
-    ld iy, PIXEL_MAP_ADDR
-    ld e, b
-    ld d, 0
-    add iy, de
-    ; Find the pixel map offset corresponding to y and add it to iy. y must be multiplied by two since each entry in the lookup table takes two bytes
-    ld ix, pixel_lookup
-    ld e, c
-    sla e
-    rl d
-    add ix, de
-    ld e, (ix)
-    ld d, (ix + 1) ; de how has the pixel map offset
-    add iy, de ; iy now has the full pixel map address for this sprite
-    ld d, iyh
-    ld e, iyl
-
-    RENDERY
-    RENDERY
-    RENDERY
-    RENDERY
-    RENDERY
-    RENDERY
-    RENDERY
-    RENDERY
-
-    pop ix ; Now we need the sprite entry addr again
-    ; Decrement the sprite entry counter and check if we've done the last entry
-    pop bc
-    dec bc
-    xor a
-    or b
-    jp nz, .loop_sprites
-    or c
-    jp nz, .loop_sprites
+    ld a, SPRITE_ENTRIES_NUM_Y
+.render_batch:
+    push af
+    .rept SPRITE_ENTRIES_NUM_X
+    RENDERSPRITE
+    .endr
+    pop af
+    dec a
+    jp nz, .render_batch
     ; Wait for the next display period
     nop
     halt
