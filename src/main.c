@@ -90,7 +90,7 @@ unsigned coordToVRAMAddr(unsigned x, unsigned y, unsigned scale) {
     return (x / 8) * 64 + (y / 8) * 1600 + (x % 8) + (y % 8) * 8;
 }
 
-void drawPixel(SDL_Renderer* renderer, unsigned x, unsigned y, unsigned pixelOffset) {
+void drawPixel(SDL_Renderer* renderer, unsigned x, unsigned y) {
     uint8_t r, g, b;
     uint8_t pixel = ppuMemRead(EMU_PARAM, PIXEL_MAP_ADDR + coordToVRAMAddr(x, y, 4));
     r = (pixel & 0b11);
@@ -107,53 +107,50 @@ typedef struct {
     VideoSection section;
     unsigned vCounter;
     unsigned hCounter;
-    unsigned pixelOffset;
 } VideoState;
 
-void setVideoState(VideoState* state, VideoSection section, unsigned h, unsigned v, unsigned pixel) {
+void setVideoState(VideoState* state, VideoSection section, unsigned h, unsigned v) {
     state->section = section;
     state->vCounter = v;
     state->hCounter = h;
-    state->pixelOffset = pixel;
 }
 
 void vStateCycle(VideoState* vstate, SDL_Renderer* renderer) {
     unsigned hCounter = vstate->hCounter;
     unsigned vCounter = vstate->vCounter;
-    unsigned pixelOffset = vstate->pixelOffset;
     switch (vstate->section) {
         case NONE:
             perror("Unexpected NONE display state\n");
             break;
         case DISPLAY:
             if (hCounter == 800) {
-                setVideoState(vstate, HBLANK, hCounter + 1, vCounter, pixelOffset);
+                setVideoState(vstate, HBLANK, hCounter + 1, vCounter);
             } else {
-                drawPixel(renderer, hCounter, vCounter, pixelOffset);
-                setVideoState(vstate, DISPLAY, hCounter + 1, vCounter, pixelOffset + 1);
+                drawPixel(renderer, hCounter, vCounter);
+                setVideoState(vstate, DISPLAY, hCounter + 1, vCounter);
             }
             break;
         case HBLANK:
             if (hCounter == 1056) {
                 if (vCounter == 599) {
-                    setVideoState(vstate, VBLANK, 0, vCounter + 1, pixelOffset);
+                    setVideoState(vstate, VBLANK, 0, vCounter + 1);
                 } else {
-                    setVideoState(vstate, DISPLAY, 0, vCounter + 1, pixelOffset);
+                    setVideoState(vstate, DISPLAY, 0, vCounter + 1);
                 }
             } else {
-                setVideoState(vstate, HBLANK, hCounter + 1, vCounter, pixelOffset);
+                setVideoState(vstate, HBLANK, hCounter + 1, vCounter);
             }
             break;
         case VBLANK:
             if (vstate->hCounter == 1056) {
                 vstate->hCounter = 0;
                 if (vstate->vCounter == 628) {
-                    setVideoState(vstate, DISPLAY, 0, 0, 0);
+                    setVideoState(vstate, DISPLAY, 0, 0);
                 } else {
-                    setVideoState(vstate, VBLANK, 0, vCounter + 1, pixelOffset);
+                    setVideoState(vstate, VBLANK, 0, vCounter + 1);
                 }
             } else {
-                setVideoState(vstate, VBLANK, hCounter + 1, vCounter, pixelOffset);
+                setVideoState(vstate, VBLANK, hCounter + 1, vCounter);
             }
             break;
     }
@@ -321,7 +318,7 @@ int main(int argc, char** argv) {
         }
     }
 
-    VideoState vState = { .section = DISPLAY, .hCounter = 0, .vCounter = 0, .pixelOffset = 0};
+    VideoState vState = { .section = DISPLAY, .hCounter = 0, .vCounter = 0 };
 
     unsigned renderCycles = 0;
     bool debug = argc > 2 && strcmp(argv[2], "y") == 0;
@@ -383,16 +380,6 @@ int main(int argc, char** argv) {
                     printf("Waiting until display\n");
                     waitForInput = false;
                     waitFor = DISPLAY;
-                    /*
-                    printf("Rendering to window\n");
-                    unsigned pixelOffset = 0;
-                    for (unsigned y = 0; y < SPRITE_ENTRIES_PIXELS_Y; y++) {
-                        for (unsigned x = 0; x < SPRITE_ENTRIES_PIXELS_X; x++) {
-                            drawPixel(renderer, x, y, pixelOffset++);
-                        }
-                    }
-                    SDL_RenderPresent(renderer);
-                    */
                 } else if (cmd[0] == 'm' && strlen(cmd) > 1) {
                     int addr = strtol(cmd + 1, NULL, 16);
                     if (addr > -1) {
