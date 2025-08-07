@@ -84,9 +84,15 @@ char* toString(VideoSection section) {
     }
 }
 
+unsigned coordToVRAMAddr(unsigned x, unsigned y, unsigned scale) {
+    x /= scale;
+    y /= scale;
+    return (x / 8) * 64 + (y / 8) * 1600 + (x % 8) + (y % 8) * 8;
+}
+
 void drawPixel(SDL_Renderer* renderer, unsigned x, unsigned y, unsigned pixelOffset) {
     uint8_t r, g, b;
-    uint8_t pixel = ppuMemRead(EMU_PARAM, PIXEL_MAP_ADDR + ((y / 4) * SPRITE_ENTRIES_PIXELS_X) + (x / 4));
+    uint8_t pixel = ppuMemRead(EMU_PARAM, PIXEL_MAP_ADDR + coordToVRAMAddr(x, y, 4));
     r = (pixel & 0b11);
     r |= (r << 2) | (r << 4) | (r << 6);
     g = (pixel & 0b1100) >> 2;
@@ -155,7 +161,7 @@ void vStateCycle(VideoState* vstate, SDL_Renderer* renderer) {
 
 void execute(Z80Context* ctx) {
     unsigned PC = ctx->PC;
-    if (PC == 0x11ab && cyclesTakenToRenderAllSprites > 1) {
+    if (PC == 0x79a && cyclesTakenToRenderAllSprites > 1) {
         printf("PPU took %d cycles to render all sprites\n", cyclesTakenToRenderAllSprites);
         cyclesTakenToRenderAllSprites = 0;
     }
@@ -400,7 +406,7 @@ int main(int argc, char** argv) {
                     if (vramDumpFile) {
                         for (unsigned y = 0; y < SPRITE_ENTRIES_PIXELS_Y; y++) {
                             for (unsigned x = 0; x < SPRITE_ENTRIES_PIXELS_X; x++) {
-                                fprintf(vramDumpFile, "|%x|", ppuMemRead(EMU_PARAM, PIXEL_MAP_ADDR + (y * SPRITE_ENTRIES_PIXELS_X) + x));
+                                fprintf(vramDumpFile, "|%x|", ppuMemRead(EMU_PARAM, PIXEL_MAP_ADDR + coordToVRAMAddr(x, y, 1)));
                             }
                             fprintf(vramDumpFile, "\n");
                         }
