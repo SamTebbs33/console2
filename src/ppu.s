@@ -97,8 +97,9 @@ spin:
     ld d, iyh
     ld e, iyl
     ; Copy 64 bytes from hl (sprite def addr) to de (pixel map addr)
-    ld bc, SPRITE_DEF_PIXELS_X * SPRITE_DEF_PIXELS_Y
-    ldir
+    .rept SPRITE_DEF_PIXELS_X * SPRITE_DEF_PIXELS_Y
+    ldi
+    .endr
 .endm
 
 render:
