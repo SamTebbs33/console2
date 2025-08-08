@@ -1,3 +1,4 @@
+; vim: ft=z80 tabstop=4 shiftwidth=4:
 SPRITE_TABLE_ADDR = (8 * 1024)
 SPRITE_DEFS_ADDR  = (16 * 1024)
 PIXEL_MAP_ADDR = (32 * 1024)
