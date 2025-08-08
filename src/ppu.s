@@ -62,40 +62,36 @@ spin:
     halt
 
 .macro RENDERSPRITE
-    ld b, (ix) ; b now has the full x coord
+    ld l, (ix) ; l has the x coord
+    ; Find the pixel map offset corresponding to x
+    ld h, 0
+    ld de, x_pixel_lookup
+    add hl, hl ; Double x since each entry in the lookup table takes two bytes
+    add hl, de ; hl is the lookup address
+    ld e, (hl)
+    inc hl
+    ld d, (hl) ; de is the x VRAM address
+
+    ; Find the pixel map offset corresponding to y
+    ld l, (ix+1) ; l now has the y coord
+    ld h, 0
+    ld bc, y_pixel_lookup
+    add hl, hl ; Double y since each entry in the lookup table takes two bytes
+    add hl, bc ; hl is the lookup address
+    ld c, (hl)
+    inc hl
+    ld h, (hl)
+    ld l, c ; hl is the y VRAM offset
+    add hl, de
+    ld d, h
+    ld e, l ; de now has the VRAM address
+
     inc ix
-    ld c, (ix) ; c now has the full y coord
     inc ix ; ix is now at the sprite address
     ld l, (ix)
     inc ix
     ld h, (ix) ; hl now has the sprite def addr
     inc ix ; ix is now at the next sprite entry
-    ; hl has sprite def addr
-    ; b has x coord
-    ; c has y coord
-    ; Find the pixel map offset corresponding to y and add it to iy. y must be multiplied by two since each entry in the lookup table takes two bytes
-    ld iy, y_pixel_lookup
-    ld d, 0
-    ld e, c
-    sla e
-    rl d
-    add iy, de
-    ld e, (iy)
-    ld d, (iy + 1) ; de how has the y pixel map offset
-    ; Find the pixel map offset corresponding to x and add it to iy. x must be multiplied by two since each entry in the lookup table takes two bytes
-    ld iy, x_pixel_lookup
-    ld c, b
-    ld b, 0
-    sla c
-    rl b
-    add iy, bc
-    ld c, (iy)
-    ld b, (iy + 1) ; de how has the x pixel map offset
-    ld iyl, c
-    ld iyh, b
-    add iy, de ; iy now has the full starting pixel map address for this sprite
-    ld d, iyh
-    ld e, iyl
     ; Copy 64 bytes from hl (sprite def addr) to de (pixel map addr)
     .rept SPRITE_DEF_PIXELS_X * SPRITE_DEF_PIXELS_Y
     ldi
@@ -118,7 +114,8 @@ render:
     jp render
 
 ; The x coordinate mapped to a VRAM address for that column.
-; Should be added to the mapped VRAM address from the y coordinate.
+; Should be added to the mapped VRAM offset from the y coordinate.
+; It would be nice to have a single table that combines the x and y mapping but that would take the entire ROM space
 x_pixel_lookup:
 .dcb.w 1, 32768
 .dcb.w 1, 32769
