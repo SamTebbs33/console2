@@ -35,8 +35,10 @@ unsigned cyclesTakenToRenderAllSprites = 0;
 
 void ppuMemWrite(size_t param, ushort address, byte data);
 byte ppuMemRead(size_t param, ushort address);
+void ppuIOWrite(size_t param, ushort port, byte data);
+byte ppuIORead(size_t param, ushort port);
 
-Z80Context PPU = {.memRead = ppuMemRead, .memWrite = ppuMemWrite, .memParam = CPU_PARAM, .ioParam = CPU_PARAM};
+Z80Context PPU = {.memRead = ppuMemRead, .memWrite = ppuMemWrite, .ioRead = ppuIORead, .ioWrite = ppuIOWrite, .memParam = CPU_PARAM, .ioParam = CPU_PARAM};
 
 byte* ppuMemMap(ushort address, ushort* relAddress) {
     if (address < PPU_CODE_END) {
@@ -52,6 +54,14 @@ byte* ppuMemMap(ushort address, ushort* relAddress) {
         *relAddress = address - PPU_RAM_START;
         return ppuRAM;
     }
+}
+
+byte ppuIORead(size_t param, ushort port) {
+    return 0;
+}
+
+void ppuIOWrite(size_t param, ushort port, byte data) {
+    // TODO
 }
 
 byte ppuMemRead(size_t param, ushort address) {
