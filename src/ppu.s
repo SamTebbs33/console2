@@ -19,6 +19,7 @@ SPRITE_ENTRIES_PIXELS_Y = (SPRITE_ENTRIES_NUM_Y * SPRITE_DEF_PIXELS_Y - 2)
 SPRITE_ENTRY_SIZE = 4
 TILE_TABLE_ADDR = (SPRITE_TABLE_ADDR + (SPRITE_ENTRY_SIZE * SPRITE_ENTRIES_NUM))
 PPU_REGS_ADDR = (TILE_TABLE_ADDR + (SPRITE_ENTRIES_NUM * SPRITE_ENTRY_SIZE))
+PPU_CPU_INT_PORT = 0
 
 .extern _stack_end
 
@@ -99,14 +100,22 @@ spin:
 render:
     ld ix, SPRITE_TABLE_ADDR
     ld a, SPRITE_ENTRIES_NUM_Y
+    ; A loop is needed since ROM can't hold the full unrolled render loop
 .render_batch:
     .rept SPRITE_ENTRIES_NUM_X
     RENDERSPRITE
     .endr
     dec a
     jp nz, .render_batch
-    ; Wait for the next display period
     nop
+    ; Interrupt CPU to tell it to update graphics data.
+    ; We could use an immediate for the port with the OUT instruction, but that would mean reloading a between the two OUTs
+    ; and I want to leave the interrupt line high for as few cycles as possible.
+    ld b, 1
+    ld c, PPU_CPU_INT_PORT
+    out (c), b
+    out (c), 0
+    ; Wait for the next display period
     halt
     ; When the next blanking period starts, the interrupt handler will jump here
     jp render
