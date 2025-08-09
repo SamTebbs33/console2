@@ -86,12 +86,10 @@ spin:
     ld d, h
     ld e, l ; de now has the VRAM address
 
-    inc ix
-    inc ix ; ix is now at the sprite address
-    ld l, (ix)
-    inc ix
-    ld h, (ix) ; hl now has the sprite def addr
-    inc ix ; ix is now at the next sprite entry
+    ld l, (ix+2)
+    ld h, (ix+3) ; hl now has the sprite def addr
+    ld bc, SPRITE_ENTRY_SIZE
+    add ix, bc ; proceed to next sprite entry
     ; Copy 64 bytes from hl (sprite def addr) to de (pixel map addr)
     .rept SPRITE_DEF_PIXELS_X * SPRITE_DEF_PIXELS_Y
     ldi
