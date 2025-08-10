@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <string.h>
 #include "consts.h"
 
 #define PPU_CODE_END SPRITE_TABLE_ADDR
@@ -24,12 +25,18 @@ byte tableRAM[8 * 1024];
 byte ppuRAM[(ushort)32 * 1024];
 byte ppuCodeROM[8 * 1024];
 byte ppuDefROM[16 * 1024];
+byte* cpuRAM = NULL;
+byte* cpuROM = NULL;
 unsigned debugStack[32 * 1024];
 unsigned debugSP = 32 * 1024 - 1;
 ushort stacktrace[255];
 byte stacktraceEnd = 0;
 byte stacktraceStart = 0;
 unsigned ppuROMLen = 0;
+unsigned cpuRAMStart = 0;
+unsigned cpuRAMEnd = 0;
+unsigned cpuROMStart = 0;
+unsigned cpuROMEnd = 0;
 bool printSectionChanges = false;
 unsigned cyclesTakenToRenderAllSprites = 0;
 
@@ -38,7 +45,11 @@ byte ppuMemRead(size_t param, ushort address);
 void ppuIOWrite(size_t param, ushort port, byte data);
 byte ppuIORead(size_t param, ushort port);
 
+void cpuMemWrite(size_t param, ushort address, byte data);
+byte cpuMemRead(size_t param, ushort address);
+
 Z80Context PPU = {.memRead = ppuMemRead, .memWrite = ppuMemWrite, .ioRead = ppuIORead, .ioWrite = ppuIOWrite, .memParam = CPU_PARAM, .ioParam = CPU_PARAM};
+Z80Context CPU = {.memRead = cpuMemRead, .memWrite = cpuMemWrite, .memParam = CPU_PARAM, .ioParam = CPU_PARAM};
 
 byte* ppuMemMap(ushort address, ushort* relAddress) {
     if (address < PPU_CODE_END) {
@@ -54,6 +65,29 @@ byte* ppuMemMap(ushort address, ushort* relAddress) {
         *relAddress = address - PPU_RAM_START;
         return ppuRAM;
     }
+}
+
+byte* cpuMemMap(ushort address, ushort* relAddress) {
+    if (address >= cpuRAMStart && address < cpuRAMEnd) {
+        *relAddress = address - cpuRAMStart;
+        return cpuRAM;
+    } else if (address >= cpuROMStart && address < cpuROMEnd) {
+        *relAddress = address - cpuROMStart;
+        return cpuROM;
+    } else {
+        *relAddress = address - CPU_SPRITE_TABLE_ADDR;
+        return tableRAM;
+    }
+}
+
+byte cpuMemRead(size_t param, ushort address) {
+    byte* mem = cpuMemMap(address, &address);
+    return mem[address];
+}
+
+void cpuMemWrite(size_t param, ushort address, byte data) {
+    byte* mem = cpuMemMap(address, &address);
+    mem[address] = data;
 }
 
 byte ppuIORead(size_t param, ushort port) {
@@ -168,55 +202,62 @@ void vStateCycle(VideoState* vstate, SDL_Renderer* renderer) {
 
 void execute(Z80Context* ctx) {
     unsigned PC = ctx->PC;
-    if (PC == 0x10fa && cyclesTakenToRenderAllSprites > 1) {
+    if (ctx == &PPU && PC == 0x10fa && cyclesTakenToRenderAllSprites > 1) {
         printf("PPU took %d cycles to render all sprites\n", cyclesTakenToRenderAllSprites);
         cyclesTakenToRenderAllSprites = 0;
     }
     stacktrace[stacktraceEnd++] = PC;
     if (stacktraceEnd <= stacktraceStart) stacktraceStart++;
 
-    byte opc1 = ppuMemRead(EMU_PARAM, PC);
-    byte opc2 = ppuMemRead(EMU_PARAM, PC + 1);
-    switch (opc1) {
-        // RETI
-        case 0xED: {
-            if (opc2 == 0x4D) {
-                ushort SP = ctx->R1.wr.SP;
-                ushort retAddr = ppuMemRead(EMU_PARAM, SP) | (ppuMemRead(EMU_PARAM, SP + 1) << 8);
-                if (retAddr >= ppuROMLen) printf("Returning from interrupt with return address outside PPU code (%x)\n", retAddr);
+    if (ctx == &PPU) {
+        byte opc1 = ppuMemRead(EMU_PARAM, PC);
+        byte opc2 = ppuMemRead(EMU_PARAM, PC + 1);
+        switch (opc1) {
+            // RETI
+            case 0xED: {
+                if (opc2 == 0x4D) {
+                    ushort SP = ctx->R1.wr.SP;
+                    ushort retAddr = ppuMemRead(EMU_PARAM, SP) | (ppuMemRead(EMU_PARAM, SP + 1) << 8);
+                    if (retAddr >= ppuROMLen) printf("Returning from interrupt with return address outside PPU code (%x)\n", retAddr);
+                }
+                break;
             }
-            break;
-        }
-        case 0xDD:
-        case 0xFD:
-            if (opc2 == 0xE1 ) {
-                // POP IX
-                // POP IY
+            case 0xDD:
+            case 0xFD:
+                if (opc2 == 0xE1 ) {
+                    // POP IX
+                    // POP IY
+                    debugSP += 2;
+                } else if (opc2 == 0xE5) {
+                    // PUSH IX
+                    // PUSH IY
+                    debugStack[--debugSP] = PC;
+                    debugStack[--debugSP] = PC;
+                }
+                break;
+            case 0b11000001:
+            case 0b11010001:
+            case 0b11100001:
+            case 0b11110001:
+                // POP qq
                 debugSP += 2;
-            } else if (opc2 == 0xE5) {
-                // PUSH IX
-                // PUSH IY
+                break;
+            case 0b11000101:
+            case 0b11010101:
+            case 0b11100101:
+            case 0b11110101:
                 debugStack[--debugSP] = PC;
                 debugStack[--debugSP] = PC;
-            }
-            break;
-        case 0b11000001:
-        case 0b11010001:
-        case 0b11100001:
-        case 0b11110001:
-            // POP qq
-            debugSP += 2;
-            break;
-        case 0b11000101:
-        case 0b11010101:
-        case 0b11100101:
-        case 0b11110101:
-            debugStack[--debugSP] = PC;
-            debugStack[--debugSP] = PC;
-            break;
+                break;
 
+        }
     }
     Z80Execute(ctx);
+}
+
+void executeAll() {
+    execute(&PPU);
+    execute(&CPU);
 }
 
 void printRegisters(Z80Context* cpu) {
@@ -244,9 +285,72 @@ void printStackTrace() {
     printRegisters(&PPU);
 }
 
+// Parse a mem map file in the form of any number of lines with a start address, end address (exclusive) and a type:
+// x,x+y,type
+//
+// Where type is "ram" or "rom".
+bool readCPUMemMapFile(FILE* file) {
+    char fileBytes[128];
+    unsigned bytesRead = fread(fileBytes, sizeof(byte), sizeof(fileBytes), file);
+    // We need to add a null terminator to the end so should have read one byte fewer than the total number
+    if (bytesRead >= sizeof(fileBytes)) return false;
+    fileBytes[bytesRead] = 0;
+    char* rest = fileBytes;
+    char* token;
+    while ((token = strtok_r(rest, "\n", &rest))) {
+        char* rest2 = token;
+        char* tok2 = strtok_r(rest2, ",", &rest2);
+        if (!tok2) {
+            printf("Unrecognised mem map format: %s\n", rest2);
+            return false;
+        }
+        unsigned start = strtol(tok2, NULL, 10);
+
+        tok2 = strtok_r(rest2, ",", &rest2);
+        if (!tok2) {
+            printf("Unrecognised mem map format: %s\n", rest2);
+            return false;
+        }
+        unsigned end = strtol(tok2, NULL, 10);
+
+        char* type = strtok_r(rest2, ",", &rest2);
+        if (!type) {
+            printf("Unrecognised mem map format: %s\n", rest2);
+            return false;
+        }
+
+        unsigned len = end - start;
+        if (strcmp(type, "ram") == 0) {
+            if (cpuRAM != NULL) free(cpuRAM);
+            cpuRAM = malloc(len * sizeof(byte));
+            if (cpuRAM == NULL) {
+                printf("Couldn't allocate %d bytes for CPU RAM\n", len);
+                return false;
+            }
+            memset(cpuRAM, 0, len * sizeof(byte));
+            cpuRAMStart = start;
+            cpuRAMEnd = end;
+        } else if (strcmp(type, "rom") == 0) {
+            if (cpuROM != NULL) free(cpuROM);
+            cpuROM = malloc(len * sizeof(byte));
+            if (cpuROM == NULL) {
+                printf("Couldn't allocate %d bytes for CPU ROM\n", len);
+                return false;
+            }
+            memset(cpuROM, 0, len * sizeof(byte));
+            cpuROMStart = start;
+            cpuROMEnd = end;
+        } else {
+            printf("Unrecognised memory type from mem map: %s\n", type);
+            return false;
+        }
+    }
+    return true;
+}
+
 int main(int argc, char** argv) {
-    if (argc < 2) {
-        printf("Expected ppu ROM path\n");
+    if (argc < 5) {
+        printf("Expected ppu ROM path, debug, cpu mem map and cpu ROM path\n");
         return 1;
     }
 
@@ -260,8 +364,32 @@ int main(int argc, char** argv) {
         return 1;
     }
     ppuROMLen = fread(ppuCodeROM, sizeof(byte), sizeof(ppuCodeROM), ppuROMFile);
-    printf("Read %d bytes\n", ppuROMLen);
+    printf("Read %d PPU ROM bytes\n", ppuROMLen);
     fclose(ppuROMFile);
+
+    char *cpuMemMapPath = argv[3];
+    printf("Reading %s\n", cpuMemMapPath);
+    FILE* cpuMemMapFile = fopen(cpuMemMapPath, "r");
+    if (!cpuMemMapFile) {
+        printf("Couldn't open %s\n", cpuMemMapPath);
+        return 1;
+    }
+    if (!readCPUMemMapFile(cpuMemMapFile)) return 1;
+    if (cpuROMEnd == 0){
+        printf("No CPU ROM mapped\n");
+        return 1;
+    }
+
+    char* cpuROMPath = argv[4];
+    printf("Reading %s\n", cpuROMPath);
+    FILE* cpuROMFile = fopen(cpuROMPath, "rb");
+    if (!cpuROMFile) {
+        printf("Couldn't open %s\n", cpuROMPath);
+        return 1;
+    }
+    unsigned read = fread(cpuROM, sizeof(byte), cpuROMEnd - cpuROMStart, cpuROMFile);
+    printf("Read %d CPU ROM bytes\n", read);
+    fclose(cpuROMFile);
 
     if (SDL_SetHintWithPriority(SDL_HINT_NO_SIGNAL_HANDLERS, "1", SDL_HINT_OVERRIDE) == SDL_FALSE) {
         printf("Failed to set SDL hint\n");
@@ -288,6 +416,7 @@ int main(int argc, char** argv) {
     memset(stacktrace, 0, sizeof(stacktrace));
 
     Z80RESET(&PPU);
+    Z80RESET(&CPU);
 
     // Give PPU a few cycles to set up stack
     Z80ExecuteTStates(&PPU, 60);
@@ -373,7 +502,7 @@ int main(int argc, char** argv) {
                     printf("Flags:\n");
                     printf("\tC: %d\n\tN: %d\n\tPV: %d\n\tHC: %d\n\tZ: %d\n\tS: %d\n", (flags & F_C) != 0, (flags & F_N) != 0, (flags & F_PV) != 0, (flags & F_H) != 0, (flags & F_Z)!= 0, (flags & F_S) != 0);
                 } else if (strcmp(cmd, "\n") == 0) {
-                    execute(&PPU);
+                    executeAll();
                 } else if (cmd[0] == 'j' && strlen(cmd) > 1) {
                     int toSkip = atoi(cmd+1);
                     if (toSkip > 0) {
@@ -415,7 +544,7 @@ int main(int argc, char** argv) {
                 }
             }
         } else {
-            execute(&PPU);
+            executeAll();
             if (instrsToSkipForDebug > 0) instrsToSkipForDebug--;
             if (instrToSkipTo >= 0 && instrToSkipTo == PPU.PC) instrToSkipTo = -1;
         }
