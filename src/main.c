@@ -262,7 +262,7 @@ void executeAll() {
 
 void printRegisters(Z80Context* cpu) {
     Z80Regs regs = cpu->R1;
-    printf("Regs:\n\tA: %d, F: %d, AF: %d\n\tB: %d, C: %d, BC: %d\n\tD: %d, E: %d, DE: %d\n\tH: %d, L: %d, HL: %d\n\tIX: %d\n\tIY: %d\n\tSP: %d\n", regs.br.A, regs.br.F, regs.wr.AF, regs.br.B, regs.br.C, regs.wr.BC, regs.br.D, regs.br.E, regs.wr.DE, regs.br.H, regs.br.L, regs.wr.HL, regs.wr.IX, regs.wr.IY, regs.wr.SP);
+    printf("%s Regs:\n\tA: %d, F: %d, AF: %d\n\tB: %d, C: %d, BC: %d\n\tD: %d, E: %d, DE: %d\n\tH: %d, L: %d, HL: %d\n\tIX: %d\n\tIY: %d\n\tSP: %d\n", cpu == &PPU ? "PPU" : "CPU", regs.br.A, regs.br.F, regs.wr.AF, regs.br.B, regs.br.C, regs.wr.BC, regs.br.D, regs.br.E, regs.wr.DE, regs.br.H, regs.br.L, regs.wr.HL, regs.wr.IX, regs.wr.IY, regs.wr.SP);
 }
 
 void printStackTrace() {
@@ -471,7 +471,9 @@ int main(int argc, char** argv) {
             char decode[20];
             char dump[20];
             Z80Debug(&PPU, dump, decode);
-            printf("PC %x %s (%s)\n", PPU.PC, decode, dump);
+            printf("PPU: PC %x %s (%s)\n", PPU.PC, decode, dump);
+            Z80Debug(&CPU, dump, decode);
+            printf("CPU: PC %x %s (%s)\n", CPU.PC, decode, dump);
             char cmd[20];
             if (fgets(cmd, sizeof(cmd), stdin) != NULL) {
                 if (strcmp(cmd, "c\n") == 0) {
@@ -487,6 +489,7 @@ int main(int argc, char** argv) {
                     waitFor = HBLANK;
                 } else if (strcmp(cmd, "r\n") == 0) {
                     printRegisters(&PPU);
+                    printRegisters(&CPU);
                 } else if (strcmp(cmd, "s\n") == 0) {
                     Z80Regs regs = PPU.R1;
                     printf("Stack:\n");
