@@ -202,7 +202,7 @@ void vStateCycle(VideoState* vstate, SDL_Renderer* renderer) {
 
 void execute(Z80Context* ctx) {
     unsigned PC = ctx->PC;
-    if (ctx == &PPU && PC == 0x10fa && cyclesTakenToRenderAllSprites > 1) {
+    if (ctx == &PPU && PC == 0x1599 && cyclesTakenToRenderAllSprites > 1) {
         printf("PPU took %d cycles to render all sprites\n", cyclesTakenToRenderAllSprites);
         cyclesTakenToRenderAllSprites = 0;
     }
@@ -396,8 +396,8 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    int windowWidth = SPRITE_ENTRIES_PIXELS_X * 4;
-    int windowHeight = SPRITE_ENTRIES_PIXELS_Y * 4;
+    int windowWidth = DISPLAY_PIXELS_X * 4;
+    int windowHeight = DISPLAY_PIXELS_Y * 4;
     printf("pixels_x: %d, pixels_y: %d\n", windowWidth, windowHeight);
 
     SDL_Init(SDL_INIT_VIDEO);
@@ -451,7 +451,7 @@ int main(int argc, char** argv) {
         ppuMemWrite(EMU_PARAM, SPRITE_TABLE_ADDR + (entry * SPRITE_ENTRY_SIZE) + 3, spriteAddr >> 8); // sprite addr high byte
         spriteOne = !spriteOne;
         x += 8;
-        if (x >= SPRITE_ENTRIES_PIXELS_X) {
+        if (x >= DISPLAY_PIXELS_X) {
             x = 0;
             y += 8;
         }
@@ -530,8 +530,8 @@ int main(int argc, char** argv) {
                         vramDumpFile = fopen("vram.log", "w");
                     }
                     if (vramDumpFile) {
-                        for (unsigned y = 0; y < SPRITE_ENTRIES_PIXELS_Y; y++) {
-                            for (unsigned x = 0; x < SPRITE_ENTRIES_PIXELS_X; x++) {
+                        for (unsigned y = 0; y < DISPLAY_PIXELS_Y; y++) {
+                            for (unsigned x = 0; x < DISPLAY_PIXELS_X; x++) {
                                 fprintf(vramDumpFile, "|%x|", ppuMemRead(EMU_PARAM, PIXEL_MAP_ADDR + coordToVRAMAddr(x, y, 1)));
                             }
                             fprintf(vramDumpFile, "\n");
