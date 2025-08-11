@@ -95,7 +95,9 @@ byte ppuIORead(size_t param, ushort port) {
 }
 
 void ppuIOWrite(size_t param, ushort port, byte data) {
-    // TODO
+    port = port & 0xFF;
+    if (port == 0 && data == 1)
+        Z80INT(&CPU, 0);
 }
 
 byte ppuMemRead(size_t param, ushort address) {
