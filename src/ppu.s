@@ -57,6 +57,11 @@ spin:
     halt
 
 .macro RENDERSPRITE
+    ; Don't render anything if the high address byte is zero
+    ld b, (ix+3)
+    dec b
+    jp m, 1f
+
     ld l, (ix) ; l has the x coord
     ; Find the pixel map offset corresponding to x
     ld h, 0
@@ -77,7 +82,7 @@ spin:
     inc hl
     ld h, (hl)
     ld l, c ; hl is the y VRAM offset
-    add hl, de
+    add hl, de ; add address from x table lookup
     ld d, h
     ld e, l ; de now has the VRAM address
 
@@ -89,6 +94,8 @@ spin:
     .rept SPRITE_DEF_PIXELS_X * SPRITE_DEF_PIXELS_Y
     ldi
     .endr
+    ; Jump here if this sprite shouldn't be rendered
+    1:
 .endm
 
 render:
