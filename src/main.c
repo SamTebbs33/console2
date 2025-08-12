@@ -307,45 +307,63 @@ bool readCPUMemMapFile(FILE* file) {
             printf("Unrecognised mem map format: %s\n", rest2);
             return false;
         }
-        unsigned start = strtol(tok2, NULL, 10);
-
-        tok2 = strtok_r(rest2, ",", &rest2);
-        if (!tok2) {
-            printf("Unrecognised mem map format: %s\n", rest2);
-            return false;
-        }
-        unsigned end = strtol(tok2, NULL, 10);
-
-        char* type = strtok_r(rest2, ",", &rest2);
-        if (!type) {
-            printf("Unrecognised mem map format: %s\n", rest2);
-            return false;
-        }
-
-        unsigned len = end - start;
-        if (strcmp(type, "ram") == 0) {
-            if (cpuRAM != NULL) free(cpuRAM);
-            cpuRAM = malloc(len * sizeof(byte));
-            if (cpuRAM == NULL) {
-                printf("Couldn't allocate %d bytes for CPU RAM\n", len);
+        if (strcmp(tok2, "defs") == 0) {
+            // Load sprites
+            char* spritesPath = strtok_r(rest2, ",", &rest2);
+            if (!spritesPath) {
+                printf("Unrecognised mem map format: %s\n", rest2);
                 return false;
             }
-            memset(cpuRAM, 0, len * sizeof(byte));
-            cpuRAMStart = start;
-            cpuRAMEnd = end;
-        } else if (strcmp(type, "rom") == 0) {
-            if (cpuROM != NULL) free(cpuROM);
-            cpuROM = malloc(len * sizeof(byte));
-            if (cpuROM == NULL) {
-                printf("Couldn't allocate %d bytes for CPU ROM\n", len);
+            FILE* spritesFile = fopen(spritesPath, "rb");
+            if (!spritesFile) {
+                printf("Can't open %s\n", spritesPath);
                 return false;
             }
-            memset(cpuROM, 0, len * sizeof(byte));
-            cpuROMStart = start;
-            cpuROMEnd = end;
+            unsigned bytesRead = fread(ppuDefROM, sizeof(byte), sizeof(ppuDefROM), spritesFile);
+            for (unsigned i = 0; i < bytesRead; i++) printf("%x and is %x at addr %x\n", ppuDefROM[i], ppuMemRead(EMU_PARAM, PPU_DEFS_START + i), PPU_DEFS_START + i);
+            fclose(spritesFile);
+            printf("Read %d bytes from %s\n", bytesRead, spritesPath);
         } else {
-            printf("Unrecognised memory type from mem map: %s\n", type);
-            return false;
+            unsigned start = strtol(tok2, NULL, 10);
+
+            tok2 = strtok_r(rest2, ",", &rest2);
+            if (!tok2) {
+                printf("Unrecognised mem map format: %s\n", rest2);
+                return false;
+            }
+            unsigned end = strtol(tok2, NULL, 10);
+
+            char* type = strtok_r(rest2, ",", &rest2);
+            if (!type) {
+                printf("Unrecognised mem map format: %s\n", rest2);
+                return false;
+            }
+
+            unsigned len = end - start;
+            if (strcmp(type, "ram") == 0) {
+                if (cpuRAM != NULL) free(cpuRAM);
+                cpuRAM = malloc(len * sizeof(byte));
+                if (cpuRAM == NULL) {
+                    printf("Couldn't allocate %d bytes for CPU RAM\n", len);
+                    return false;
+                }
+                memset(cpuRAM, 0, len * sizeof(byte));
+                cpuRAMStart = start;
+                cpuRAMEnd = end;
+            } else if (strcmp(type, "rom") == 0) {
+                if (cpuROM != NULL) free(cpuROM);
+                cpuROM = malloc(len * sizeof(byte));
+                if (cpuROM == NULL) {
+                    printf("Couldn't allocate %d bytes for CPU ROM\n", len);
+                    return false;
+                }
+                memset(cpuROM, 0, len * sizeof(byte));
+                cpuROMStart = start;
+                cpuROMEnd = end;
+            } else {
+                printf("Unrecognised memory type from mem map: %s\n", type);
+                return false;
+            }
         }
     }
     return true;
@@ -358,6 +376,11 @@ int main(int argc, char** argv) {
     }
 
     memset(ppuCodeROM, 0, sizeof(ppuCodeROM));
+    memset(tableRAM, 0, sizeof(tableRAM));
+    memset(ppuRAM, 0x00, sizeof(ppuRAM));
+    memset(ppuDefROM, 0, sizeof(ppuDefROM));
+    memset(stacktrace, 0, sizeof(stacktrace));
+
     char* ppuROMPath = argv[1];
     printf("Reading %s\n", ppuROMPath);
     FILE* ppuROMFile = fopen(ppuROMPath, "rb");
@@ -412,11 +435,6 @@ int main(int argc, char** argv) {
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     SDL_RenderClear(renderer);
     SDL_RenderPresent(renderer);
-
-    memset(tableRAM, 0, sizeof(tableRAM));
-    memset(ppuRAM, 0x00, sizeof(ppuRAM));
-    memset(ppuDefROM, 0, sizeof(ppuDefROM));
-    memset(stacktrace, 0, sizeof(stacktrace));
 
     Z80RESET(&PPU);
     Z80RESET(&CPU);
