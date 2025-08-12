@@ -39,6 +39,7 @@ unsigned cpuROMStart = 0;
 unsigned cpuROMEnd = 0;
 bool printSectionChanges = false;
 unsigned cyclesTakenToRenderAllSprites = 0;
+bool waitUntilCPUInterrupted = false;
 
 void ppuMemWrite(size_t param, ushort address, byte data);
 byte ppuMemRead(size_t param, ushort address);
@@ -96,8 +97,10 @@ byte ppuIORead(size_t param, ushort port) {
 
 void ppuIOWrite(size_t param, ushort port, byte data) {
     port = port & 0xFF;
-    if (port == 0 && data == 1)
+    if (port == 0 && data == 1) {
+        waitUntilCPUInterrupted = false;
         Z80INT(&CPU, 0);
+    }
 }
 
 byte ppuMemRead(size_t param, ushort address) {
@@ -106,8 +109,6 @@ byte ppuMemRead(size_t param, ushort address) {
 }
 
 void ppuMemWrite(size_t param, ushort address, byte data) {
-    ushort originalAddress = address;
-    //if (originalAddress == 0x2b32) printf("Writing %x to render state by PC %x\n", data, PPU.PC);
     byte* mem = ppuMemMap(address, &address);
     if (param == CPU_PARAM) {
         if (mem == ppuCodeROM) printf("error: Writing to ppu ROM address %x after PC %x\n", address, PPU.PC);
@@ -433,7 +434,7 @@ int main(int argc, char** argv) {
     int instrToSkipTo = -1;
 
     while (true) {
-        if (debug && waitForInput && instrsToSkipForDebug == 0 && instrToSkipTo == -1) {
+        if (debug && waitForInput && instrsToSkipForDebug == 0 && instrToSkipTo == -1 && !waitUntilCPUInterrupted) {
             char decode[20];
             char dump[20];
             Z80Debug(&PPU, dump, decode);
@@ -508,6 +509,8 @@ int main(int argc, char** argv) {
                     } else printf("Couldn't open vram.log\n");
                     fclose(vramDumpFile);
                     vramDumpFile = NULL;
+                } else if (strcmp(cmd, "i\n") == 0) {
+                    waitUntilCPUInterrupted = true;
                 } else {
                     printf("Unrecognised command\n");
                 }
