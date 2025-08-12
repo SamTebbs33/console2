@@ -423,42 +423,6 @@ int main(int argc, char** argv) {
     // Give PPU a few cycles to set up stack
     Z80ExecuteTStates(&PPU, 60);
 
-    // Set up demo
-    // Define sprites
-    unsigned spriteNo = 0;
-    for (unsigned row = 0; row < 8; row++) {
-        for (unsigned column = 0; column < 8; column++) {
-            ppuDefROM[(SPRITE_DEF_SIZE * spriteNo) + (row * 8) + column] = 0xDD;
-        }
-    }
-    spriteNo = 1;
-    for (unsigned row = 0; row < 8; row++) {
-        for (unsigned column = 0; column < 8; column++) {
-            byte pixel;
-            if (row % 2 == 0) pixel = column % 2 == 0 ? 0x00 : 0xDD;
-            else pixel = column % 2 == 0 ? 0xBB : 0x99;
-            ppuDefROM[(SPRITE_DEF_SIZE * spriteNo) + (row * 8) + column] = pixel;
-        }
-    }
-
-    // Fill sprite entries
-    bool spriteOne = false;
-    byte x = 0;
-    byte y = 0;
-    for (unsigned entry = 0; entry < SPRITE_ENTRIES_NUM; entry++) {
-        uint16_t spriteAddr = SPRITE_DEFS_ADDR + SPRITE_DEF_SIZE * (spriteOne ? 1 : 0);
-        ppuMemWrite(EMU_PARAM, SPRITE_TABLE_ADDR + (entry * SPRITE_ENTRY_SIZE) + 0, x); // x coord
-        ppuMemWrite(EMU_PARAM, SPRITE_TABLE_ADDR + (entry * SPRITE_ENTRY_SIZE) + 1, y); // y coord
-        ppuMemWrite(EMU_PARAM, SPRITE_TABLE_ADDR + (entry * SPRITE_ENTRY_SIZE) + 2, spriteAddr & 0xFF); // sprite addr low byte
-        ppuMemWrite(EMU_PARAM, SPRITE_TABLE_ADDR + (entry * SPRITE_ENTRY_SIZE) + 3, spriteAddr >> 8); // sprite addr high byte
-        spriteOne = !spriteOne;
-        x += 8;
-        if (x >= DISPLAY_PIXELS_X) {
-            x = 0;
-            y += 8;
-        }
-    }
-
     VideoState vState = { .section = DISPLAY, .hCounter = 0, .vCounter = 0 };
 
     unsigned renderCycles = 0;
