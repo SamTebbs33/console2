@@ -10,7 +10,7 @@ MEMORY {
  * 8KiB - 48KiB: Working mem, stack at top
  * 48KiB - 64KiB: Sprite table and ppu registers
  */
-_stack_end = 48 * 1024 - 1;
+_stack_end = 32 * 1024 - 1;
 
 SECTIONS
 {
