@@ -17,13 +17,9 @@ int main(int argc, char** argv) {
             for (unsigned x = 0; x < 800; x++) printf("Drawing from %x at %d,%d\n", pixelOffset++, x, y);
         }
     } else {
-        printf("x_pixel_lookup:\n");
-        for (unsigned char x = 0; x < SPRITE_ENTRIES_PIXELS_X; x++) {
-            printf(".dcb.w 1, %d\n", (x / 8) * 64 + (x % 8) + (unsigned int)PIXEL_MAP_ADDR);
-        }
         printf("\ny_pixel_lookup:\n");
-        for (unsigned char y = 0; y < SPRITE_ENTRIES_PIXELS_Y; y++) {
-            printf(".dcb.w 1, %d\n", (y / 8) * 1600 + (y % 8) * 8);
+        for (unsigned char y = 0; y < DISPLAY_PIXELS_Y; y++) {
+            printf(".dcb.w 1, %d\n", (unsigned)PIXEL_MAP_ADDR + y * 200);
         }
     }
     return 0;

@@ -134,7 +134,7 @@ char* toString(VideoSection section) {
 unsigned coordToVRAMAddr(unsigned x, unsigned y, unsigned scale) {
     x /= scale;
     y /= scale;
-    return (x / 8) * 64 + (y / 8) * 1600 + (x % 8) + (y % 8) * 8;
+    return y * DISPLAY_PIXELS_X + x;
 }
 
 void drawPixel(SDL_Renderer* renderer, unsigned x, unsigned y) {
@@ -205,7 +205,7 @@ void vStateCycle(VideoState* vstate, SDL_Renderer* renderer) {
 
 void execute(Z80Context* ctx) {
     unsigned PC = ctx->PC;
-    if (ctx == &PPU && PC == 0x1599 && cyclesTakenToRenderAllSprites > 1) {
+    if (ctx == &PPU && PC == 0x1f5a && cyclesTakenToRenderAllSprites > 1) {
         printf("PPU took %d cycles to render all sprites\n", cyclesTakenToRenderAllSprites);
         cyclesTakenToRenderAllSprites = 0;
     }
