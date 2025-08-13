@@ -320,7 +320,6 @@ bool readCPUMemMapFile(FILE* file) {
                 return false;
             }
             unsigned bytesRead = fread(ppuDefROM, sizeof(byte), sizeof(ppuDefROM), spritesFile);
-            for (unsigned i = 0; i < bytesRead; i++) printf("%x and is %x at addr %x\n", ppuDefROM[i], ppuMemRead(EMU_PARAM, PPU_DEFS_START + i), PPU_DEFS_START + i);
             fclose(spritesFile);
             printf("Read %d bytes from %s\n", bytesRead, spritesPath);
         } else {
