@@ -1,5 +1,10 @@
 ; vim: ft=z80 tabstop=4 shiftwidth=4:
+SPRITE_ENTRY_SIZE = 4
+SPRITE_ENTRIES_NUM = 64
 SPRITE_TABLE_ADDR = (8 * 1024)
+TILE_TABLE_ADDR = (SPRITE_TABLE_ADDR + SPRITE_ENTRIES_NUM * SPRITE_ENTRY_SIZE)
+TILES_NUM_Y = 19
+TILES_NUM_X = 25
 SPRITE_DEFS_ADDR  = (16 * 1024)
 PIXEL_MAP_ADDR = (32 * 1024)
 SPRITE_DEF_NUM = 255
@@ -9,8 +14,6 @@ SPRITE_DEF_PIXELS_NUM = (SPRITE_DEF_PIXELS_X * SPRITE_DEF_PIXELS_Y)
 SPRITE_DEF_SIZE = (SPRITE_DEF_PIXELS_NUM)
 SPRITE_DEF_MEM_SIZE = (SPRITE_DEF_SIZE * SPRITE_DEF_NUM)
 ANIMATION_DEFS_ADDR = (SPRITE_DEFS_ADDR + SPRITE_DEF_MEM_SIZE)
-SPRITE_ENTRY_SIZE = 4
-SPRITE_ENTRIES_NUM = 64
 TILE_TABLE_ADDR = (SPRITE_TABLE_ADDR + (SPRITE_ENTRY_SIZE * SPRITE_ENTRIES_NUM))
 PPU_REGS_ADDR = (TILE_TABLE_ADDR + (SPRITE_ENTRIES_NUM * SPRITE_ENTRY_SIZE))
 PPU_CPU_INT_PORT = 0
@@ -99,12 +102,47 @@ spin:
 .endm
 
 render:
+    ; Render background tiles
+    ld ix, TILE_TABLE_ADDR
+    ld hl, PIXEL_MAP_ADDR
+    .rept TILES_NUM_Y
+        ld a, TILES_NUM_X
+        1:
+            ; Render this tile
+            ld e, (ix)
+            ld d, (ix+1) ; de has the sprite def address
+            inc ix
+            inc ix
+            .rept SPRITE_DEF_PIXELS_Y
+                ; the vram address is held in hl because of its compatibility with ADD and SBC, but it's needed in de for LDI
+                ex de, hl
+                .rept SPRITE_DEF_PIXELS_X
+                    ldi
+                .endr
+                ex de, hl
+                ; Move vram address to the next line
+                ld bc, 192
+                add hl, bc
+            .endr
+            dec a
+            jp z, 2f
+            ; Move to the next tile's start address
+            ld bc, 1592
+            or a
+            sbc hl, bc
+            jp 1b
+        2:
+            ld bc, 192
+            or a
+            sbc hl, bc
+    .endr
+
     ld ix, SPRITE_TABLE_ADDR
-    ld a, 3
+    ld a, 8
     ; A loop is needed since ROM can't hold the full unrolled render loop
 .render_batch:
-    .rept SPRITE_ENTRIES_NUM / 3
-    RENDERSPRITE
+    .rept SPRITE_ENTRIES_NUM / 8
+        RENDERSPRITE
     .endr
     dec a
     jp nz, .render_batch
