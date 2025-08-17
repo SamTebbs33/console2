@@ -383,7 +383,6 @@ int main(int argc, char** argv) {
     char* ppuROMPath = argv[1];
     printf("Reading %s\n", ppuROMPath);
     FILE* ppuROMFile = fopen(ppuROMPath, "rb");
-    FILE* vramDumpFile = NULL;
     if (!ppuROMFile) {
         printf("Couldn't open %s\n", ppuROMPath);
         return 1;
@@ -513,9 +512,7 @@ int main(int argc, char** argv) {
                         printf("Byte at addr %x is %d\n", addr, b);
                     }
                 } else if (strcmp(cmd, "dv\n") == 0) {
-                    if (!vramDumpFile) {
-                        vramDumpFile = fopen("vram.log", "w");
-                    }
+                    FILE* vramDumpFile = fopen("vram.log", "w");
                     if (vramDumpFile) {
                         for (unsigned y = 0; y < DISPLAY_PIXELS_Y; y++) {
                             for (unsigned x = 0; x < DISPLAY_PIXELS_X; x++) {
@@ -523,9 +520,34 @@ int main(int argc, char** argv) {
                             }
                             fprintf(vramDumpFile, "\n");
                         }
+                        fclose(vramDumpFile);
                     } else printf("Couldn't open vram.log\n");
-                    fclose(vramDumpFile);
-                    vramDumpFile = NULL;
+                } else if (strcmp(cmd, "dt\n") == 0) {
+                    FILE* tablesDumpFile = fopen("tables.log", "w");
+                    if (!tablesDumpFile) {
+                        printf("Couldn't open tables.log\n");
+                    } else {
+                        fprintf(tablesDumpFile, "Sprite table:\n");
+                        for (unsigned i = 0; i < SPRITE_ENTRIES_NUM; i++) {
+                            unsigned addr = SPRITE_TABLE_ADDR + SPRITE_ENTRY_SIZE * i;
+                            byte x = ppuMemRead(EMU_PARAM, addr);
+                            byte y = ppuMemRead(EMU_PARAM, addr+1);
+                            byte spriteDefAddrLow = ppuMemRead(EMU_PARAM, addr+2);
+                            byte spriteDefAddrHigh = ppuMemRead(EMU_PARAM, addr+3);
+                            fprintf(tablesDumpFile, "x = %d, y = %d, addrLow: %x, addrHigh = 0x%x\n", x, y, spriteDefAddrLow, spriteDefAddrHigh);
+                        }
+                        fprintf(tablesDumpFile, "\nTile table:");
+                        unsigned addr = TILE_TABLE_ADDR;
+                        for (unsigned y = 0; y < 19; y++) {
+                            fprintf(tablesDumpFile, "\ny = %d", y);
+                            for (unsigned x = 0; x < 25; x++, addr += TILE_ENTRY_SIZE) {
+                            byte spriteDefAddrLow = ppuMemRead(EMU_PARAM, addr);
+                            byte spriteDefAddrHigh = ppuMemRead(EMU_PARAM, addr+1);
+                                fprintf(tablesDumpFile, "|0x%x|", spriteDefAddrLow | (spriteDefAddrHigh << 8));
+                            }
+                        }
+                        fclose(tablesDumpFile);
+                    }
                 } else if (strcmp(cmd, "i\n") == 0) {
                     waitUntilCPUInterrupted = true;
                 } else {
