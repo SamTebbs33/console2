@@ -17,6 +17,7 @@ ANIMATION_DEFS_ADDR = (SPRITE_DEFS_ADDR + SPRITE_DEF_MEM_SIZE)
 TILE_TABLE_ADDR = (SPRITE_TABLE_ADDR + (SPRITE_ENTRY_SIZE * SPRITE_ENTRIES_NUM))
 PPU_REGS_ADDR = (TILE_TABLE_ADDR + (SPRITE_ENTRIES_NUM * SPRITE_ENTRY_SIZE))
 PPU_CPU_INT_PORT = 0
+PPU_REG_RENDER_BACKGROUND = PPU_REGS_ADDR + 0
 
 .extern _stack_end
 
@@ -25,6 +26,8 @@ PPU_CPU_INT_PORT = 0
 _start:
     ; The interrupt handler takes the return address from hl
     ld hl, render
+    ld ix, PPU_REG_RENDER_BACKGROUND
+    ld (ix), 1
     ld ix, _stack_end
     ld sp, ix
     im 1
@@ -102,6 +105,11 @@ spin:
 .endm
 
 render:
+    ; Check if the background or foreground should be rendered
+    ld a, (PPU_REG_RENDER_BACKGROUND)
+    dec a
+    jp nz, .render_sprites ; non-zero means that a was zero before being decremented
+    ld (PPU_REG_RENDER_BACKGROUND), a ; load zero into the register so the foreground is rendered next time
     ; Render background tiles
     ld ix, TILE_TABLE_ADDR
     ld hl, PIXEL_MAP_ADDR
@@ -136,7 +144,12 @@ render:
             or a
             sbc hl, bc
     .endr
+    jp .render_exit
 
+.render_sprites:
+    ; Render the background next time
+    ld a, 1
+    ld (PPU_REG_RENDER_BACKGROUND), a
     ld ix, SPRITE_TABLE_ADDR
     ld a, 8
     ; A loop is needed since ROM can't hold the full unrolled render loop
@@ -146,6 +159,7 @@ render:
     .endr
     dec a
     jp nz, .render_batch
+.render_exit:
     nop
     ; Interrupt CPU to tell it to update graphics data.
     ; We could use an immediate for the port with the OUT instruction, but that would mean reloading a between the two OUTs
