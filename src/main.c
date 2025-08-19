@@ -52,6 +52,9 @@ byte cpuMemRead(size_t param, ushort address);
 Z80Context PPU = {.memRead = ppuMemRead, .memWrite = ppuMemWrite, .ioRead = ppuIORead, .ioWrite = ppuIOWrite, .memParam = CPU_PARAM, .ioParam = CPU_PARAM};
 Z80Context CPU = {.memRead = cpuMemRead, .memWrite = cpuMemWrite, .memParam = CPU_PARAM, .ioParam = CPU_PARAM};
 
+void dumpInsnAtPC(Z80Context* ctx, char* name);
+void printStackTrace();
+
 byte* ppuMemMap(ushort address, ushort* relAddress) {
     if (address < PPU_CODE_END) {
         *relAddress = address;
@@ -111,8 +114,19 @@ byte ppuMemRead(size_t param, ushort address) {
 void ppuMemWrite(size_t param, ushort address, byte data) {
     byte* mem = ppuMemMap(address, &address);
     if (param == CPU_PARAM) {
-        if (mem == ppuCodeROM) printf("error: Writing to ppu ROM address %x after PC %x\n", address, PPU.PC);
-        else if (mem == ppuDefROM) printf("error: Writing to ppu def ROM address %x after PC %x\n", address, PPU.PC);
+        if (mem == tableRAM && address < TILE_TABLE_SIZE) {
+            printf("Writing to tableRAM.\n");
+            dumpInsnAtPC(&PPU, "PPU");
+            printStackTrace();
+            exit(1);
+        }
+    }
+    if (mem == ppuCodeROM) {
+        printf("error: Writing to ppu ROM address %x after PC %x\n", address, PPU.PC);
+        exit(1);
+    } else if (mem == ppuDefROM) {
+        printf("error: Writing to ppu def ROM address %x after PC %x\n", address, PPU.PC);
+        exit(1);
     }
     mem[address] = data;
 }
@@ -209,8 +223,10 @@ void execute(Z80Context* ctx) {
         printf("PPU took %d cycles to render all sprites\n", cyclesTakenToRenderAllSprites);
         cyclesTakenToRenderAllSprites = 0;
     }
-    stacktrace[stacktraceEnd++] = PC;
-    if (stacktraceEnd <= stacktraceStart) stacktraceStart++;
+    if (ctx == &PPU) {
+        stacktrace[stacktraceEnd++] = PC;
+        if (stacktraceEnd <= stacktraceStart) stacktraceStart++;
+    }
 
     if (ctx == &PPU) {
         byte opc1 = ppuMemRead(EMU_PARAM, PC);
@@ -368,6 +384,13 @@ bool readCPUMemMapFile(FILE* file) {
     return true;
 }
 
+void dumpInsnAtPC(Z80Context* ctx, char* name) {
+    char decode[20];
+    char dump[20];
+    Z80Debug(ctx, dump, decode);
+    printf("%s: PC %x %s (%s)\n", name, ctx->PC, decode, dump);
+}
+
 int main(int argc, char** argv) {
     if (argc < 5) {
         printf("Expected ppu ROM path, debug, cpu mem map and cpu ROM path\n");
@@ -451,12 +474,8 @@ int main(int argc, char** argv) {
 
     while (true) {
         if (debug && waitForInput && instrsToSkipForDebug == 0 && instrToSkipTo == -1 && !waitUntilCPUInterrupted) {
-            char decode[20];
-            char dump[20];
-            Z80Debug(&PPU, dump, decode);
-            printf("PPU: PC %x %s (%s)\n", PPU.PC, decode, dump);
-            Z80Debug(&CPU, dump, decode);
-            printf("CPU: PC %x %s (%s)\n", CPU.PC, decode, dump);
+            dumpInsnAtPC(&PPU, "PPU");
+            dumpInsnAtPC(&CPU, "CPU");
             char cmd[20];
             if (fgets(cmd, sizeof(cmd), stdin) != NULL) {
                 if (strcmp(cmd, "c\n") == 0) {
