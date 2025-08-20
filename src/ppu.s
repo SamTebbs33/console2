@@ -1,4 +1,5 @@
 ; vim: ft=z80 tabstop=4 shiftwidth=4:
+DISPLAY_PIXELS_X = 200
 SPRITE_ENTRY_SIZE = 4
 SPRITE_ENTRIES_NUM = 64
 SPRITE_TABLE_ADDR = (8 * 1024)
@@ -85,27 +86,24 @@ changeBanks:
     ld b, 0
     ld c, (ix-4)
     add hl, bc ; Add it to the x coord
-    ex de, hl ; Put the full VRAM address in de
 
-    ld l, (ix-2)
-    ld h, (ix-1) ; hl now has the sprite def addr
+    ld e, (ix-2)
+    ld d, (ix-1) ; hl now has the sprite def addr
+    ld bc, DISPLAY_PIXELS_X - SPRITE_DEF_PIXELS_X
     ; Copy 64 bytes from hl (sprite def addr) to de (pixel map addr) in 8 byte chunks
     ; Don't copy those that are 0
     .rept SPRITE_DEF_PIXELS_Y
         .rept SPRITE_DEF_PIXELS_X
-            ld a, (hl)
+            ld a, (de)
             or a
             jr z, 1f
-            ld (de), a
+            ld (hl), a
             1:
             inc hl
             inc de
         .endr
         ; Move VRAM address to the next row
-        ld iy, 192
-        add iy, de
-        ld d, iyh
-        ld e, iyl
+        add hl, bc
     .endr
     ; Jump here if this sprite shouldn't be rendered
     2:
