@@ -17,6 +17,7 @@ ANIMATION_DEFS_ADDR = (SPRITE_DEFS_ADDR + SPRITE_DEF_MEM_SIZE)
 TILE_TABLE_ADDR = (SPRITE_TABLE_ADDR + (SPRITE_ENTRY_SIZE * SPRITE_ENTRIES_NUM))
 PPU_REGS_ADDR = (TILE_TABLE_ADDR + ((TILES_NUM_X * TILES_NUM_Y) * SPRITE_ENTRY_SIZE))
 PPU_CPU_INT_PORT = 0
+PPU_BANK_SWITCH_PORT = 1
 PPU_REG_RENDER_BACKGROUND = PPU_REGS_ADDR + 0
 
 .extern _stack_end
@@ -25,22 +26,20 @@ PPU_REG_RENDER_BACKGROUND = PPU_REGS_ADDR + 0
 .global _start
 _start:
     ; The interrupt handler takes the return address from hl
-    ld hl, render
+    ld hl, changeBanks
     ld ix, _stack_end
     ld sp, ix
     im 1
     ei
-    jp spin
+    halt
 
 .section .intHandler
 .global _intHandler
 ; An interrupt means we're transitioning from spinning to rendering
 _intHandler:
-    ; Remove return address from top of stack and put saved render address there instead
+    ; Replace saved return address with render function
+    ld hl, render
     ex (sp), hl
-    ; Restore previously saved regs from last rendering period
-    ex af, af'
-    exx
     ei
     reti
 
@@ -48,16 +47,20 @@ _intHandler:
 .global _nmiHandler
 ; An NMI means we're transitioning from rendering to spinning
 _nmiHandler:
-    ; Save regs. Spinning doesn't modify the regs so we don't have to worry about them being clobbered before the next rendering period
-    exx
-    ex af, af'
-    ; Replace nmi return address with spin function then save return address
-    ld hl, spin
+    ; Replace nmi return address with spin function
+    ld hl, changeBanks
     ex (sp), hl
     retn
 
 .section .text
-spin:
+
+changeBanks:
+    ; Swap banks so while rendering we don't write to the same VRAM as the VGA circuit
+    ld c, PPU_BANK_SWITCH_PORT
+    out (c), b
+    out (c), 0
+    ; The interrupt handlers get the return address from hl
+    ; Give the CPU some time and wait until the next display period
     halt
 
 .macro RENDERSPRITE
@@ -160,8 +163,6 @@ render:
     out (c), 0
     ; Wait for the next display period
     halt
-    ; When the next blanking period starts, the interrupt handler will jump here
-    jp render
 
 ; The y coordinate mapped to a VRAM address for that row
 ; Should be added to the x coordinate to form a full VRAM address

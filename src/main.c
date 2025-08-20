@@ -21,8 +21,11 @@
 #define CPU_PARAM 0
 #define EMU_PARAM 1
 
+// True means that the PPU has banked the VRAM, meaning that it accesses VRAM2 and the VGA circuit accesses VRAM1
+bool ppuRAMBanked = false;
 byte tableRAM[8 * 1024];
-byte ppuRAM[(ushort)32 * 1024];
+byte ppuRAM1[(ushort)32 * 1024];
+byte ppuRAM2[(ushort)32 * 1024];
 byte ppuCodeROM[8 * 1024];
 byte ppuDefROM[16 * 1024];
 byte* cpuRAM = NULL;
@@ -55,7 +58,7 @@ Z80Context CPU = {.memRead = cpuMemRead, .memWrite = cpuMemWrite, .memParam = CP
 void dumpInsnAtPC(Z80Context* ctx, char* name);
 void printStackTrace();
 
-byte* ppuMemMap(ushort address, ushort* relAddress) {
+byte* ppuMemMap(size_t param, ushort address, ushort* relAddress) {
     if (address < PPU_CODE_END) {
         *relAddress = address;
         return ppuCodeROM;
@@ -67,7 +70,8 @@ byte* ppuMemMap(ushort address, ushort* relAddress) {
         return ppuDefROM;
     } else {
         *relAddress = address - PPU_RAM_START;
-        return ppuRAM;
+        if (param == CPU_PARAM) return ppuRAMBanked ? ppuRAM2 : ppuRAM1;
+        else return ppuRAMBanked ? ppuRAM1 : ppuRAM2; // TODO swap around when testing banking
     }
 }
 
@@ -103,16 +107,18 @@ void ppuIOWrite(size_t param, ushort port, byte data) {
     if (port == 0 && data == 1) {
         waitUntilCPUInterrupted = false;
         Z80INT(&CPU, 0);
+    } else if (port == 1 && data == 1) {
+        ppuRAMBanked = !ppuRAMBanked;
     }
 }
 
 byte ppuMemRead(size_t param, ushort address) {
-    byte* mem = ppuMemMap(address, &address);
+    byte* mem = ppuMemMap(param, address, &address);
     return mem[address];
 }
 
 void ppuMemWrite(size_t param, ushort address, byte data) {
-    byte* mem = ppuMemMap(address, &address);
+    byte* mem = ppuMemMap(param, address, &address);
     if (param == CPU_PARAM) {
         if (mem == tableRAM && address < TILE_TABLE_SIZE) {
             printf("Writing to tableRAM.\n");
@@ -399,7 +405,8 @@ int main(int argc, char** argv) {
 
     memset(ppuCodeROM, 0, sizeof(ppuCodeROM));
     memset(tableRAM, 0, sizeof(tableRAM));
-    memset(ppuRAM, 0x00, sizeof(ppuRAM));
+    memset(ppuRAM1, 0x00, sizeof(ppuRAM1));
+    memset(ppuRAM2, 0x00, sizeof(ppuRAM2));
     memset(ppuDefROM, 0, sizeof(ppuDefROM));
     memset(stacktrace, 0, sizeof(stacktrace));
 
@@ -581,17 +588,17 @@ int main(int argc, char** argv) {
         VideoSection prevSection = vState.section;
         vStateCycle(&vState, renderer);
         vStateCycle(&vState, renderer);
-        if (vState.section == VBLANK || vState.section == HBLANK) cyclesTakenToRenderAllSprites++;
-        if (vState.section == HBLANK && prevSection != HBLANK) {
+        if (vState.section == VBLANK && prevSection != VBLANK) {
             SDL_RenderPresent(renderer);
-            Z80INT(&PPU, 0);
-            if (debug && printSectionChanges) printf("HBLANK triggered\n");
-        } else if (vState.section == DISPLAY && prevSection != DISPLAY) {
-            //printf("PPU was rendering for %d cycles\n", renderCycles);
             Z80NMI(&PPU);
-            renderCycles = 0;
-        } else if (vState.section == VBLANK && prevSection != VBLANK) {
+            cyclesTakenToRenderAllSprites++;
             if (debug && printSectionChanges) printf("VBLANK triggered\n");
+        } else if (vState.section == DISPLAY && prevSection != DISPLAY && vState.vCounter == 0) {
+            //printf("PPU was rendering for %d cycles\n", renderCycles);
+            Z80INT(&PPU, 0);
+            renderCycles = 0;
+        } else if (vState.section == HBLANK && prevSection != HBLANK) {
+            if (debug && printSectionChanges) printf("HBLANK triggered\n");
         }
 
         if (waitFor == vState.section && prevSection != vState.section) {

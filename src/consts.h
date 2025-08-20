@@ -7,7 +7,7 @@
 #define TILE_ENTRIES_NUM (19 * 25)
 #define TILE_ENTRY_SIZE (2)
 #define DISPLAY_PIXELS_X (25 * 8)
-#define DISPLAY_PIXELS_Y (19 * 8)
+#define DISPLAY_PIXELS_Y ((19 * 8) - 2)
 
 #define SPRITE_DEF_NUM 255
 #define SPRITE_DEF_PIXELS_X 8
