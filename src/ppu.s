@@ -26,8 +26,6 @@ PPU_REG_RENDER_BACKGROUND = PPU_REGS_ADDR + 0
 _start:
     ; The interrupt handler takes the return address from hl
     ld hl, render
-    ld ix, PPU_REG_RENDER_BACKGROUND
-    ld (ix), 1
     ld ix, _stack_end
     ld sp, ix
     im 1
@@ -105,11 +103,6 @@ spin:
 .endm
 
 render:
-    ; Check if the background or foreground should be rendered
-    ld a, (PPU_REG_RENDER_BACKGROUND)
-    dec a
-    jp nz, .render_sprites ; non-zero means that a was zero before being decremented
-    ld (PPU_REG_RENDER_BACKGROUND), a ; load zero into the register so the foreground is rendered next time
     ; Render background tiles
     ld ix, TILE_TABLE_ADDR
     ld hl, PIXEL_MAP_ADDR
@@ -144,12 +137,9 @@ render:
             or a
             sbc hl, bc
     .endr
-    jp .render_exit
 
 .render_sprites:
     ; Render the background next time
-    ld a, 1
-    ld (PPU_REG_RENDER_BACKGROUND), a
     ld ix, SPRITE_TABLE_ADDR
     ld a, 8
     ; A loop is needed since ROM can't hold the full unrolled render loop
