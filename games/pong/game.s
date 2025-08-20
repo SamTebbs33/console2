@@ -10,15 +10,13 @@ SPRITE_2_ADDR = PPU_DEFS_ADDR + 2 * 64
 .section .intHandler
 .global _intHandler
 _intHandler:
-    inc b
-    jp nz, .ret
+    inc a
+    cp 10
+    jr nz, .ret
+    ld a, 0
     ld ix, SPRITE_TABLE_ADDR
-    ld (ix), c ; x
-    ld (ix+1), 0 ; y
-    ld (ix+2), SPRITE_0_ADDR & 0xFF ; sprite addr low
-    ld (ix+3), SPRITE_0_ADDR >> 8 ; sprite addr high
-    inc c
-.ret:
+    inc (ix+4)
+    .ret:
     ei
     reti
 
@@ -41,8 +39,16 @@ setup_background:
             add ix, bc
         .endr
     .endr
-    ld b, 0
-    ld c, 0
+    ld ix, SPRITE_TABLE_ADDR
+    ld (ix), 8
+    ld (ix+1), 0 ; y
+    ld (ix+2), SPRITE_0_ADDR & 0xFF ; sprite addr low
+    ld (ix+3), SPRITE_0_ADDR >> 8 ; sprite addr high
+    ld (ix+4), 0
+    ld (ix+5), 0 ; y
+    ld (ix+6), SPRITE_0_ADDR & 0xFF ; sprite addr low
+    ld (ix+7), SPRITE_0_ADDR >> 8 ; sprite addr high
+    ld a, 0
     im 1
     ei
 .spin:
