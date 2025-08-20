@@ -14,7 +14,6 @@ SPRITE_DEF_PIXELS_NUM = (SPRITE_DEF_PIXELS_X * SPRITE_DEF_PIXELS_Y)
 SPRITE_DEF_SIZE = (SPRITE_DEF_PIXELS_NUM)
 SPRITE_DEF_MEM_SIZE = (SPRITE_DEF_SIZE * SPRITE_DEF_NUM)
 ANIMATION_DEFS_ADDR = (SPRITE_DEFS_ADDR + SPRITE_DEF_MEM_SIZE)
-TILE_TABLE_ADDR = (SPRITE_TABLE_ADDR + (SPRITE_ENTRY_SIZE * SPRITE_ENTRIES_NUM))
 PPU_REGS_ADDR = (TILE_TABLE_ADDR + ((TILES_NUM_X * TILES_NUM_Y) * SPRITE_ENTRY_SIZE))
 PPU_CPU_INT_PORT = 0
 PPU_BANK_SWITCH_PORT = 1
@@ -71,7 +70,7 @@ changeBanks:
     ; Don't render anything if the high address byte is zero
     ld b, (ix-1)
     dec b
-    jp m, 1f
+    jp m, 2f
 
     ; Get y * 200 from the lookup table and add it to x to get the full VRAM address
     ld l, (ix-3) ; l now has the y coord
@@ -91,9 +90,16 @@ changeBanks:
     ld l, (ix-2)
     ld h, (ix-1) ; hl now has the sprite def addr
     ; Copy 64 bytes from hl (sprite def addr) to de (pixel map addr) in 8 byte chunks
+    ; Don't copy those that are 0
     .rept SPRITE_DEF_PIXELS_Y
         .rept SPRITE_DEF_PIXELS_X
-            ldi
+            ld a, (hl)
+            or a
+            jr z, 1f
+            ld (de), a
+            1:
+            inc hl
+            inc de
         .endr
         ; Move VRAM address to the next row
         ld iy, 192
@@ -102,7 +108,7 @@ changeBanks:
         ld e, iyl
     .endr
     ; Jump here if this sprite shouldn't be rendered
-    1:
+    2:
 .endm
 
 render:
@@ -141,22 +147,21 @@ render:
             sbc hl, bc
     .endr
 
-.render_sprites:
-    ; Render the background next time
+    ; Render sprites
     ld ix, SPRITE_TABLE_ADDR
-    ld a, 8
+    ld a, 16
     ; A loop is needed since ROM can't hold the full unrolled render loop
 .render_batch:
-    .rept SPRITE_ENTRIES_NUM / 8
+    push af
+    .rept SPRITE_ENTRIES_NUM / 16
         RENDERSPRITE
     .endr
+    pop af
     dec a
     jp nz, .render_batch
-.render_exit:
-    nop
     ; Interrupt CPU to tell it to update graphics data.
     ; We could use an immediate for the port with the OUT instruction, but that would mean reloading a between the two OUTs
-    ; and I want to leave the interrupt line high for as few cycles as possible.
+    ; and I want to leave the interrupt line high for as few cycles as possible (if that matters?).
     ld b, 1
     ld c, PPU_CPU_INT_PORT
     out (c), b
