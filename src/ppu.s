@@ -1,6 +1,6 @@
 ; vim: ft=z80 tabstop=4 shiftwidth=4:
 DISPLAY_PIXELS_X = 200
-SPRITE_ENTRY_SIZE = 4
+SPRITE_ENTRY_SIZE = 5
 SPRITE_ENTRIES_NUM = 64
 SPRITE_TABLE_ADDR = (8 * 1024)
 TILE_TABLE_ADDR = (SPRITE_TABLE_ADDR + SPRITE_ENTRIES_NUM * SPRITE_ENTRY_SIZE)
@@ -63,33 +63,37 @@ changeBanks:
     halt
 
 .macro RENDERSPRITE
-    ; Proceed to next sprite entry. Index ix with negative offsets for this sprite.
-    ; This is done unconditionally at the start so that we can jump past this sprite with the address already added to.
-    ld bc, SPRITE_ENTRY_SIZE
-    add ix, bc
-    ; Don't render anything if the high address byte is zero
-    ld b, (ix-1)
-    dec b
-    jp m, 2f
-
+    ld a, (bc)
+    ; Don't render anything if the sprite entry is disabled
+    inc bc
+    or a
+    jp z, 2f
     ; Get y * 200 from the lookup table and add it to x to get the full VRAM address
-    ld l, (ix-3) ; l now has the y coord
+    ld a, (bc) ; y coord
+    inc bc
+    ld l, a
     ld h, 0
     add hl, hl ; Double y since each entry in the lookup table takes two bytes
     ld de, y_pixel_lookup
     add hl, de ; hl is the lookup address
-    ld c, (hl)
+    ld e, (hl)
     inc hl
     ld h, (hl)
-    ld l, c ; hl is the y VRAM offset
-    ld b, 0
-    ld c, (ix-4)
-    add hl, bc ; Add it to the x coord
+    ld l, e ; hl is the y VRAM offset
+    ld d, 0
+    ld a, (bc)
+    inc bc
+    ld e, a
+    add hl, de ; Add it to the x coord
 
-    ld e, (ix-2)
-    ld d, (ix-1) ; hl now has the sprite def addr
+    ld a, (bc)
+    ld e, a
+    inc bc
+    ld a, (bc)
+    ld d, a ; de now has the sprite def addr
+    push bc
     ld bc, DISPLAY_PIXELS_X - SPRITE_DEF_PIXELS_X
-    ; Copy 64 bytes from hl (sprite def addr) to de (pixel map addr) in 8 byte chunks
+    ; Copy 64 bytes from de (sprite def addr) to hl (VRAM addr) in 8 byte chunks
     ; Don't copy those that are 0
     .rept SPRITE_DEF_PIXELS_Y
         .rept SPRITE_DEF_PIXELS_X
@@ -104,8 +108,14 @@ changeBanks:
         ; Move VRAM address to the next row
         add hl, bc
     .endr
-    ; Jump here if this sprite shouldn't be rendered
+    pop bc
+    jr 3f
     2:
+    .rept SPRITE_ENTRY_SIZE - 2
+        inc bc
+    .endr
+    3: ; next sprite
+    inc bc
 .endm
 
 render:
@@ -139,13 +149,12 @@ render:
             sbc hl, bc
             jp 1b
         2:
-            ld bc, 192
             or a
-            sbc hl, bc
+            sbc hl, bc ; bc should contain 192 from the main loop above
     .endr
 
     ; Render sprites
-    ld ix, SPRITE_TABLE_ADDR
+    ld bc, SPRITE_TABLE_ADDR
     ld a, 16
     ; A loop is needed since ROM can't hold the full unrolled render loop
 .render_batch:

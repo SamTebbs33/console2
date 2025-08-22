@@ -1,5 +1,5 @@
 ; vim: ft=z80 tabstop=4 shiftwidth=4:
-SPRITE_ENTRY_SIZE = 4
+SPRITE_ENTRY_SIZE = 5
 SPRITE_ENTRIES_NUM = 64
 SPRITE_TABLE_ADDR = 48 * 1024
 TILE_TABLE_ADDR = SPRITE_TABLE_ADDR + SPRITE_ENTRIES_NUM * SPRITE_ENTRY_SIZE
@@ -15,7 +15,7 @@ _intHandler:
     jr nz, .ret
     ld a, 0
     ld ix, SPRITE_TABLE_ADDR
-    inc (ix+4)
+    inc (ix+7)
     .ret:
     ei
     reti
@@ -40,14 +40,16 @@ setup_background:
         .endr
     .endr
     ld ix, SPRITE_TABLE_ADDR
-    ld (ix), 8
+    ld (ix), 1 ; enabled
     ld (ix+1), 0 ; y
-    ld (ix+2), SPRITE_0_ADDR & 0xFF ; sprite addr low
-    ld (ix+3), SPRITE_0_ADDR >> 8 ; sprite addr high
-    ld (ix+4), 0
-    ld (ix+5), 0 ; y
-    ld (ix+6), SPRITE_0_ADDR & 0xFF ; sprite addr low
-    ld (ix+7), SPRITE_0_ADDR >> 8 ; sprite addr high
+    ld (ix+2), 8 ; x
+    ld (ix+3), SPRITE_0_ADDR & 0xFF ; sprite addr low
+    ld (ix+4), SPRITE_0_ADDR >> 8 ; sprite addr high
+    ld (ix+5), 1 ; enabled
+    ld (ix+6), 0 ; y
+    ld (ix+7), 0 ; x
+    ld (ix+8), SPRITE_0_ADDR & 0xFF ; sprite addr low
+    ld (ix+9), SPRITE_0_ADDR >> 8 ; sprite addr high
     ld a, 0
     im 1
     ei
