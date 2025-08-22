@@ -26,9 +26,8 @@ PPU_REG_RENDER_BACKGROUND = PPU_REGS_ADDR + 0
 .global _start
 _start:
     ; The interrupt handler takes the return address from hl
+    ld sp, _stack_end
     ld hl, changeBanks
-    ld ix, _stack_end
-    ld sp, ix
     im 1
     ei
     halt
